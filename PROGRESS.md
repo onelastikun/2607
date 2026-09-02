@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-E6：AM uptime 和 MicroBench test 已通过；准备进行 NVBoard 与外部标准测试。
+E5/E6：NVBoard 软件接入、AM uptime 和 MicroBench test 已通过；准备外部标准测试与总线阶段。
 
 ## 已完成
 
@@ -156,6 +156,25 @@ E6：AM uptime 和 MicroBench test 已通过；准备进行 NVBoard 与外部标
 - MicroBench 10 个项目全部通过，8368310 周期后 good trap；
 - MicroBench 输出 `PASS`，测得总运行时间约 444.823 ms（宿主机环境数据，仅作本次验证记录）。
 
+## NVBoard 接入
+
+已完成：
+
+- 新增独立 NVBoard 平台目录，复用同一 MiniRV 核心，不复制 CPU 实现；
+- NVBoard 顶层、板级字节存储器、十六进制七段数码管译码器按功能拆分；
+- CPU 核心在板级环境中不依赖 DPI-C；
+- 支持 PC、指令、提交状态、周期数、访存状态和任意 RV32E 寄存器观察；
+- 支持拨码开关到 LED 的直接回显检查；
+- 非法指令和 `ebreak` 有明确 LED 状态；
+- 添加约束文件、自动引脚绑定、独立 Makefile 和使用说明。
+
+验证结果：
+
+- NVBoard、SDL2、SDL2_image、SDL2_ttf 和 Verilator 全量构建：通过；
+- Verilator `-Wall` 与 C++ `-Wall/-Wextra`：无警告；
+- `SDL_VIDEODRIVER=dummy make smoke` 运行 100 周期并正常退出；
+- 尚未声明物理 FPGA 板上验证。
+
 ## 下一步
 
-完成 NVBoard 接入；继续获取并运行 `riscv-tests`/`riscv-arch-test` 官方测试。
+继续获取并运行 `riscv-tests`/`riscv-arch-test` 官方测试，然后进入 E7 简易总线。
