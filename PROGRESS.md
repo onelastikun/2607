@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-E4：MiniRV/RV32E 基础指令集和定向自检已通过，准备接入官方测试与 DiffTest。
+E4：MiniRV/RV32E 定向自检已通过，NEMU RV32E 参考模型接口已构建，正在接入 NPC DiffTest。
 
 ## 已完成
 
@@ -69,6 +69,20 @@ E4：MiniRV/RV32E 基础指令集和定向自检已通过，准备接入官方�
 - 定向程序 114 条指令后 good trap；
 - Verilator `-Wall` 构建无警告。
 
+## NEMU 参考模型基线
+
+已完成：
+
+- 新增 `riscv32e-ref_defconfig`，构建 16 寄存器 RV32E 共享参考模型；
+- 实现 NEMU 的 DiffTest 内存复制、寄存器复制、参考执行和异常注入接口；
+- 实现 RISC-V 寄存器/PC 比较；
+- 成功生成 `nemu/build/riscv32-nemu-interpreter-so`。
+
+环境情况：
+
+- 官方测试和 AM/NVBoard 仓库的 GitHub 下载已重试两次；当前网络分别出现 TLS 中断和 443 连接超时；
+- 该网络问题不阻止继续使用本地 NEMU 接入 DiffTest；后续在需要官方测试时再次重试。
+
 ## 下一步
 
-初始化测试仓库，接入官方 MiniRV/riscv-tests/riscv-arch-test，并实现 NEMU DiffTest。
+在 NPC 中动态加载 NEMU 共享库，按每条提交指令比较 PC 和 16 个通用寄存器。
