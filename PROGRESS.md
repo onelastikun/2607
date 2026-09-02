@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-E4：NPC 与 NEMU 的逐指令 DiffTest 已通过；软硬件已按功能模块化，准备接入官方测试。
+E4/E6：35 项 AM CPU 测试全部通过，TRM 串口与退出路径已接入；准备完成 AM 时钟和基准程序。
 
 ## 已完成
 
@@ -120,6 +120,25 @@ E4：NPC 与 NEMU 的逐指令 DiffTest 已通过；软硬件已按功能模块�
 - bad trap 与非法指令错误路径：通过；
 - Verilator 和 C++ `-Wall/-Wextra`：无警告。
 
+## AM、TRM 与 CPU 测试
+
+已完成：
+
+- 从本机已有官方 Git 对象创建干净的 `am-kernels` ics2026 和 `nvboard` master 工作副本，未复制原工作区中的未提交实现；
+- AM `minirv-npc` 的 `run` 目标接入 NPC 镜像参数；
+- TRM `putch()` 通过 `0xa00003f8` 串口 MMIO 输出；
+- TRM `halt()` 通过 `a0 + ebreak` 传递退出码；
+- C++ 侧新增独立 `DeviceMap` 模块，当前提供串口和 64 位微秒计时器 MMIO；
+- 完成 KLIB 字符串、内存和基础格式化输出函数；
+- `.envrc` 统一禁用不可写宿主缓存目录中的 ccache。
+
+验证结果：
+
+- `dummy`：通过；
+- `hello`：正确输出正文和 `mainargs=KISS-NPC` 后 good trap；
+- AM CPU tests 除故意返回失败的 `wrong` 外共 35 项全部通过；
+- 覆盖长整数、除法、排序、字符串、格式化、非对齐访问和复杂 C 程序。
+
 ## 下一步
 
-重试初始化官方测试仓库，运行 MiniRV、`riscv-tests` 和 `riscv-arch-test`。
+完成 `AM_TIMER_UPTIME`，运行 AM timer test 和 microbench；同时继续获取 `riscv-tests`/`riscv-arch-test` 官方仓库。

@@ -14,3 +14,6 @@
 
 !AGENTS.md
 !PROGRESS.md
+/am-kernels
+/nvboard
+!.envrc

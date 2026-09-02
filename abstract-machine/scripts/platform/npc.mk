@@ -25,7 +25,9 @@ image: image-dep
 	@echo + OBJCOPY "->" $(IMAGE_REL).bin
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
+NPC_RUN_FLAGS ?= MAX_CYCLES=10000000
+
 run: insert-arg
-	echo "TODO: add command here to run simulation"
+	$(MAKE) -C $(NPC_HOME) run IMG=$(IMAGE).bin $(NPC_RUN_FLAGS)
 
 .PHONY: insert-arg

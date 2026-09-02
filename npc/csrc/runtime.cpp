@@ -7,14 +7,16 @@
 namespace {
 
 npc::Memory *g_memory = nullptr;
+npc::DeviceMap *g_devices = nullptr;
 npc::RunState *g_state = nullptr;
 
 }  // namespace
 
 namespace npc {
 
-void bind_runtime(Memory &memory, RunState &state) {
+void bind_runtime(Memory &memory, DeviceMap &devices, RunState &state) {
   g_memory = &memory;
+  g_devices = &devices;
   g_state = &state;
 }
 
@@ -22,11 +24,16 @@ void bind_runtime(Memory &memory, RunState &state) {
 
 extern "C" std::uint32_t pmem_read(std::uint32_t address,
                                     std::uint8_t length) {
+  std::uint32_t value = 0;
+  if (g_devices != nullptr && g_devices->read(address, length, value)) {
+    return value;
+  }
   return g_memory == nullptr ? 0 : g_memory->read(address, length);
 }
 
 extern "C" void pmem_write(std::uint32_t address, std::uint32_t data,
                            std::uint8_t mask) {
+  if (g_devices != nullptr && g_devices->write(address, data, mask)) return;
   if (g_memory != nullptr) g_memory->write(address, data, mask);
 }
 

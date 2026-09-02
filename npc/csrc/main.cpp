@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 
+#include "device.h"
 #include "difftest.h"
 #include "memory.h"
 #include "options.h"
@@ -18,8 +19,9 @@ int main(int argc, char **argv) {
 
   try {
     npc::Memory memory;
+    npc::DeviceMap devices;
     npc::RunState state;
-    npc::bind_runtime(memory, state);
+    npc::bind_runtime(memory, devices, state);
 
     const auto image_size = memory.load_image(options.image_path);
     std::cout << "loaded " << image_size << " bytes at 0x" << std::hex
