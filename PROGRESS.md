@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-E4/E6：35 项 AM CPU 测试全部通过，TRM 串口与退出路径已接入；准备完成 AM 时钟和基准程序。
+E6：AM uptime 和 MicroBench test 已通过；准备进行 NVBoard 与外部标准测试。
 
 ## 已完成
 
@@ -139,6 +139,23 @@ E4/E6：35 项 AM CPU 测试全部通过，TRM 串口与退出路径已接入；
 - AM CPU tests 除故意返回失败的 `wrong` 外共 35 项全部通过；
 - 覆盖长整数、除法、排序、字符串、格式化、非对齐访问和复杂 C 程序。
 
+## AM 时钟与 MicroBench
+
+已完成：
+
+- AM `AM_TIMER_UPTIME` 读取 `0xa0000048` 起始的 64 位微秒计数；
+- 使用“高-低-高”读取顺序避免 32 位 CPU 观察到撕裂的 64 位计数；
+- `AM_TIMER_CONFIG.has_rtc=false`，不虚报未实现的墙上时钟能力；
+- 新增有限运行的 `am-timer-smoke`，验证计数单调且至少推进 1000 微秒；
+- 完成 MicroBench `test` 数据集回归。
+
+验证结果：
+
+- `am-timer-smoke`：29026 周期后 good trap；
+- AM 自带 RTC 测试为无限循环，曾连续观察到 uptime 从 1 秒递增到 54 秒，随后由测试上限主动终止；
+- MicroBench 10 个项目全部通过，8368310 周期后 good trap；
+- MicroBench 输出 `PASS`，测得总运行时间约 444.823 ms（宿主机环境数据，仅作本次验证记录）。
+
 ## 下一步
 
-完成 `AM_TIMER_UPTIME`，运行 AM timer test 和 microbench；同时继续获取 `riscv-tests`/`riscv-arch-test` 官方仓库。
+完成 NVBoard 接入；继续获取并运行 `riscv-tests`/`riscv-arch-test` 官方测试。
