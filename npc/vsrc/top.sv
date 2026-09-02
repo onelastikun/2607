@@ -80,7 +80,7 @@ module top (
     .bus_error(bus_error)
   );
 
-  axi_lite_pmem #(.READ_DELAY(1), .WRITE_DELAY(1)) u_pmem (
+  axi_lite_pmem #(.READ_DELAY(0), .WRITE_DELAY(0)) u_pmem (
     .clock(clock), .reset(reset),
     .arvalid(arvalid), .arready(arready), .araddr(araddr),
     .rvalid(rvalid), .rready(rready), .rdata(rdata), .rresp(rresp),
