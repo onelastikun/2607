@@ -26,8 +26,9 @@ image: image-dep
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
 NPC_RUN_FLAGS ?= MAX_CYCLES=100000000
+NPC_DIFF      ?=
 
 run: insert-arg
-	$(MAKE) -C $(NPC_HOME) run IMG=$(IMAGE).bin $(NPC_RUN_FLAGS)
+	$(MAKE) -C $(NPC_HOME) run IMG=$(IMAGE).bin $(NPC_RUN_FLAGS) DIFF=$(NPC_DIFF)
 
 .PHONY: insert-arg

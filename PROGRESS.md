@@ -275,6 +275,17 @@ make -C riscv-tests ARCH=minirv-npc TEST_ISA=i EXCLUDE_TEST='fence_i ma_data' ru
 
 结果：`test list [38 item(s)]`，全部 `PASS`。
 
+DiffTest 验证命令：
+
+```bash
+make -C riscv-tests clean
+make -C riscv-tests ARCH=minirv-npc TEST_ISA=i \
+  EXCLUDE_TEST='fence_i ma_data' \
+  NPC_DIFF="$PWD/nemu/build/riscv32-nemu-interpreter-so" run
+```
+
+结果：38 项全部 `PASS`，未发现 DUT/参考模型状态不一致。
+
 环境情况：
 
 - `riscv-tests` 已通过 GitHub codeload 归档获取到当前工作区，但作为外部测试依赖不纳入根仓库提交；
