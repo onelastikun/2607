@@ -19,6 +19,9 @@ module top (
     input int unsigned abort_pc,
     input int unsigned abort_inst
   );
+  import "DPI-C" function void npc_bus_error(
+    input int unsigned fault_pc
+  );
 
   logic        core_step;
   logic [31:0] core_imem_addr;
@@ -34,6 +37,9 @@ module top (
   logic        illegal;
   logic [31:0] trap_code;
   logic        bus_error;
+  logic        lite_bus_error;
+  logic        master_protocol_error;
+  logic        fabric_error;
 
   logic        arvalid;
   logic        arready;
@@ -52,6 +58,38 @@ module top (
   logic        bvalid;
   logic        bready;
   logic [1:0]  bresp;
+
+  logic        axi_arvalid;
+  logic        axi_arready;
+  logic [31:0] axi_araddr;
+  logic [3:0]  axi_arid;
+  logic [7:0]  axi_arlen;
+  logic [2:0]  axi_arsize;
+  logic [1:0]  axi_arburst;
+  logic        axi_rvalid;
+  logic        axi_rready;
+  logic [31:0] axi_rdata;
+  logic [1:0]  axi_rresp;
+  logic [3:0]  axi_rid;
+  logic        axi_rlast;
+  logic        axi_awvalid;
+  logic        axi_awready;
+  logic [31:0] axi_awaddr;
+  logic [3:0]  axi_awid;
+  logic [7:0]  axi_awlen;
+  logic [2:0]  axi_awsize;
+  logic [1:0]  axi_awburst;
+  logic        axi_wvalid;
+  logic        axi_wready;
+  logic [31:0] axi_wdata;
+  logic [3:0]  axi_wstrb;
+  logic        axi_wlast;
+  logic        axi_bvalid;
+  logic        axi_bready;
+  logic [1:0]  axi_bresp;
+  logic [3:0]  axi_bid;
+
+  assign bus_error = lite_bus_error || master_protocol_error || fabric_error;
 
   minirv_core u_core (
     .clock(clock), .reset(reset), .step(core_step),
@@ -77,22 +115,49 @@ module top (
     .awvalid(awvalid), .awready(awready), .awaddr(awaddr),
     .wvalid(wvalid), .wready(wready), .wdata(wdata), .wstrb(wstrb),
     .bvalid(bvalid), .bready(bready), .bresp(bresp),
-    .bus_error(bus_error)
+    .bus_error(lite_bus_error)
   );
 
-  axi_lite_pmem #(.READ_DELAY(0), .WRITE_DELAY(0)) u_pmem (
+  axi_lite_master_to_axi4 u_master_adapter (
+    .lite_arvalid(arvalid), .lite_arready(arready), .lite_araddr(araddr),
+    .lite_rvalid(rvalid), .lite_rready(rready), .lite_rdata(rdata),
+    .lite_rresp(rresp), .lite_awvalid(awvalid), .lite_awready(awready),
+    .lite_awaddr(awaddr), .lite_wvalid(wvalid), .lite_wready(wready),
+    .lite_wdata(wdata), .lite_wstrb(wstrb), .lite_bvalid(bvalid),
+    .lite_bready(bready), .lite_bresp(bresp),
+    .axi_arvalid(axi_arvalid), .axi_arready(axi_arready),
+    .axi_araddr(axi_araddr), .axi_arid(axi_arid), .axi_arlen(axi_arlen),
+    .axi_arsize(axi_arsize), .axi_arburst(axi_arburst),
+    .axi_rvalid(axi_rvalid), .axi_rready(axi_rready), .axi_rdata(axi_rdata),
+    .axi_rresp(axi_rresp), .axi_rid(axi_rid), .axi_rlast(axi_rlast),
+    .axi_awvalid(axi_awvalid), .axi_awready(axi_awready),
+    .axi_awaddr(axi_awaddr), .axi_awid(axi_awid), .axi_awlen(axi_awlen),
+    .axi_awsize(axi_awsize), .axi_awburst(axi_awburst),
+    .axi_wvalid(axi_wvalid), .axi_wready(axi_wready), .axi_wdata(axi_wdata),
+    .axi_wstrb(axi_wstrb), .axi_wlast(axi_wlast), .axi_bvalid(axi_bvalid),
+    .axi_bready(axi_bready), .axi_bresp(axi_bresp), .axi_bid(axi_bid),
+    .protocol_error(master_protocol_error)
+  );
+
+  axi4_system_interconnect u_system_interconnect (
     .clock(clock), .reset(reset),
-    .arvalid(arvalid), .arready(arready), .araddr(araddr),
-    .rvalid(rvalid), .rready(rready), .rdata(rdata), .rresp(rresp),
-    .awvalid(awvalid), .awready(awready), .awaddr(awaddr),
-    .wvalid(wvalid), .wready(wready), .wdata(wdata), .wstrb(wstrb),
-    .bvalid(bvalid), .bready(bready), .bresp(bresp)
+    .arvalid(axi_arvalid), .arready(axi_arready), .araddr(axi_araddr),
+    .arid(axi_arid), .arlen(axi_arlen), .arsize(axi_arsize),
+    .arburst(axi_arburst), .rvalid(axi_rvalid), .rready(axi_rready),
+    .rdata(axi_rdata), .rresp(axi_rresp), .rid(axi_rid), .rlast(axi_rlast),
+    .awvalid(axi_awvalid), .awready(axi_awready), .awaddr(axi_awaddr),
+    .awid(axi_awid), .awlen(axi_awlen), .awsize(axi_awsize),
+    .awburst(axi_awburst), .wvalid(axi_wvalid), .wready(axi_wready),
+    .wdata(axi_wdata), .wstrb(axi_wstrb), .wlast(axi_wlast),
+    .bvalid(axi_bvalid), .bready(axi_bready), .bresp(axi_bresp),
+    .bid(axi_bid), .bus_error(fabric_error)
   );
 
   always_ff @(posedge clock) begin
     if (!reset && core_step) begin
-      if (illegal || bus_error) npc_abort(pc, inst);
-      if (is_ebreak) npc_ebreak(pc, trap_code);
+      if (bus_error) npc_bus_error(pc);
+      else if (illegal) npc_abort(pc, inst);
+      if (is_ebreak && !bus_error) npc_ebreak(pc, trap_code);
     end
   end
 

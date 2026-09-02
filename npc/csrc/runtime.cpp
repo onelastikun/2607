@@ -44,6 +44,14 @@ extern "C" void npc_ebreak(std::uint32_t pc, std::uint32_t code) {
   g_state->code = code;
 }
 
+extern "C" void npc_bus_error(std::uint32_t pc) {
+  if (g_state == nullptr) return;
+  g_state->aborted = true;
+  g_state->pc = pc;
+  std::cerr << "bus response error before pc=0x" << std::hex << std::setw(8)
+            << std::setfill('0') << pc << std::dec << '\n';
+}
+
 extern "C" void npc_abort(std::uint32_t pc, std::uint32_t inst) {
   if (g_state == nullptr) return;
   g_state->aborted = true;

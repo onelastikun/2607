@@ -4,6 +4,8 @@ OBJ_DIR       := $(BUILD_DIR)/obj_dir
 BIN           := $(OBJ_DIR)/V$(TOPNAME)
 DIRECTED_ELF  := $(BUILD_DIR)/rv32e-directed.elf
 DIRECTED_BIN  := $(BUILD_DIR)/rv32e-directed.bin
+BUS_ERROR_ELF := $(BUILD_DIR)/bus-error.elf
+BUS_ERROR_BIN := $(BUILD_DIR)/bus-error.bin
 VERILATOR     ?= verilator
 RISCV_CC       ?= riscv64-linux-gnu-gcc
 RISCV_OBJCOPY  ?= riscv64-linux-gnu-objcopy
@@ -57,12 +59,26 @@ $(DIRECTED_ELF): tests/rv32e-directed.S tests/linker.ld
 $(DIRECTED_BIN): $(DIRECTED_ELF)
 	$(RISCV_OBJCOPY) -O binary $< $@
 
+$(BUS_ERROR_ELF): tests/bus-error.S tests/linker.ld
+	@mkdir -p $(BUILD_DIR)
+	$(RISCV_CC) -march=rv32e_zicsr -mabi=ilp32e -fno-pic -fno-pie \
+		-nostdlib -nostartfiles -static -mno-relax -Wl,--build-id=none \
+		-Wl,-T,$(abspath tests/linker.ld) -o $@ $<
+
+$(BUS_ERROR_BIN): $(BUS_ERROR_ELF)
+	$(RISCV_OBJCOPY) -O binary $< $@
+
 test-rv32e: $(BIN) $(DIRECTED_BIN)
 	$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 $(if $(filter-out 0,$(ITRACE)),--itrace)
 
 test-diff: $(BIN) $(DIRECTED_BIN)
 	@test -f $(NEMU_REF) || { echo "missing NEMU reference: $(NEMU_REF)"; exit 1; }
 	$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 --diff $(NEMU_REF) 		$(if $(filter-out 0,$(ITRACE)),--itrace)
+
+
+test-bus-error: $(BIN) $(BUS_ERROR_BIN)
+	@set +e; $(BIN) --image $(BUS_ERROR_BIN) --max-cycles 100; status=$$?; \
+		set -e; test $$status -ne 0
 
 sim:
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
@@ -71,6 +87,6 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-rv32e test-diff sim clean
+.PHONY: all run test-rv32e test-diff test-bus-error sim clean
 
 include ../Makefile

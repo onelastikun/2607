@@ -74,8 +74,14 @@ module axi4_interconnect_4x4 #(
 
   logic [3:0] write_busy;
   logic [1:0] write_target [0:3];
-  integer comb_master;
-  integer comb_slave;
+  integer ar_master;
+  integer ar_slave;
+  integer aw_master;
+  integer aw_slave;
+  integer w_master;
+  integer w_slave;
+  integer resp_master;
+  integer resp_slave;
   integer seq_master;
   logic [1:0] response_master;
 
@@ -88,103 +94,109 @@ module axi4_interconnect_4x4 #(
     endcase
   endfunction
 
-  always_comb begin
+  always_comb begin : route_read_addresses
     m_arready = 4'd0;
-    m_rvalid = 4'd0;
-    m_rdata = '0;
-    m_rresp = '0;
-    m_rid = '0;
-    m_rlast = 4'd0;
-    m_awready = 4'd0;
-    m_wready = 4'd0;
-    m_bvalid = 4'd0;
-    m_bresp = '0;
-    m_bid = '0;
-
     s_arvalid = 4'd0;
     s_araddr = '0;
     s_arid = '0;
     s_arlen = '0;
     s_arsize = '0;
     s_arburst = '0;
-    s_rready = 4'd0;
+    for (ar_slave = 0; ar_slave < 4; ar_slave = ar_slave + 1) begin
+      for (ar_master = 0; ar_master < 4; ar_master = ar_master + 1) begin
+        if (!s_arvalid[ar_slave] && m_arvalid[ar_master] &&
+            decode_target(m_araddr[ar_master*32 + 28 +: 4]) == ar_slave[1:0]) begin
+          s_arvalid[ar_slave] = 1'b1;
+          s_araddr[ar_slave*32 +: 32] = m_araddr[ar_master*32 +: 32];
+          s_arid[ar_slave*SID_WIDTH +: SID_WIDTH] =
+              {ar_master[1:0], m_arid[ar_master*MID_WIDTH +: MID_WIDTH]};
+          s_arlen[ar_slave*8 +: 8] = m_arlen[ar_master*8 +: 8];
+          s_arsize[ar_slave*3 +: 3] = m_arsize[ar_master*3 +: 3];
+          s_arburst[ar_slave*2 +: 2] = m_arburst[ar_master*2 +: 2];
+          m_arready[ar_master] = s_arready[ar_slave];
+        end
+      end
+    end
+  end
+
+  always_comb begin : route_write_addresses
+    m_awready = 4'd0;
     s_awvalid = 4'd0;
     s_awaddr = '0;
     s_awid = '0;
     s_awlen = '0;
     s_awsize = '0;
     s_awburst = '0;
+    for (aw_slave = 0; aw_slave < 4; aw_slave = aw_slave + 1) begin
+      for (aw_master = 0; aw_master < 4; aw_master = aw_master + 1) begin
+        if (!s_awvalid[aw_slave] && m_awvalid[aw_master] &&
+            !write_busy[aw_master] &&
+            decode_target(m_awaddr[aw_master*32 + 28 +: 4]) == aw_slave[1:0]) begin
+          s_awvalid[aw_slave] = 1'b1;
+          s_awaddr[aw_slave*32 +: 32] = m_awaddr[aw_master*32 +: 32];
+          s_awid[aw_slave*SID_WIDTH +: SID_WIDTH] =
+              {aw_master[1:0], m_awid[aw_master*MID_WIDTH +: MID_WIDTH]};
+          s_awlen[aw_slave*8 +: 8] = m_awlen[aw_master*8 +: 8];
+          s_awsize[aw_slave*3 +: 3] = m_awsize[aw_master*3 +: 3];
+          s_awburst[aw_slave*2 +: 2] = m_awburst[aw_master*2 +: 2];
+          m_awready[aw_master] = s_awready[aw_slave];
+        end
+      end
+    end
+  end
+
+  always_comb begin : route_write_data
+    m_wready = 4'd0;
     s_wvalid = 4'd0;
     s_wdata = '0;
     s_wstrb = '0;
     s_wlast = 4'd0;
+    for (w_slave = 0; w_slave < 4; w_slave = w_slave + 1) begin
+      for (w_master = 0; w_master < 4; w_master = w_master + 1) begin
+        if (!s_wvalid[w_slave] && write_busy[w_master] &&
+            write_target[w_master] == w_slave[1:0] && m_wvalid[w_master]) begin
+          s_wvalid[w_slave] = 1'b1;
+          s_wdata[w_slave*32 +: 32] = m_wdata[w_master*32 +: 32];
+          s_wstrb[w_slave*4 +: 4] = m_wstrb[w_master*4 +: 4];
+          s_wlast[w_slave] = m_wlast[w_master];
+          m_wready[w_master] = s_wready[w_slave];
+        end
+      end
+    end
+  end
+
+  always_comb begin : route_responses
+    m_rvalid = 4'd0;
+    m_rdata = '0;
+    m_rresp = '0;
+    m_rid = '0;
+    m_rlast = 4'd0;
+    s_rready = 4'd0;
+    m_bvalid = 4'd0;
+    m_bresp = '0;
+    m_bid = '0;
     s_bready = 4'd0;
-
-    // Fixed-priority address arbitration is local to each target.
-    for (comb_slave = 0; comb_slave < 4; comb_slave = comb_slave + 1) begin
-      for (comb_master = 0; comb_master < 4; comb_master = comb_master + 1) begin
-        if (!s_arvalid[comb_slave] && m_arvalid[comb_master] &&
-            decode_target(m_araddr[comb_master*32 + 28 +: 4]) == comb_slave[1:0]) begin
-          s_arvalid[comb_slave] = 1'b1;
-          s_araddr[comb_slave*32 +: 32] = m_araddr[comb_master*32 +: 32];
-          s_arid[comb_slave*SID_WIDTH +: SID_WIDTH] =
-              {comb_master[1:0], m_arid[comb_master*MID_WIDTH +: MID_WIDTH]};
-          s_arlen[comb_slave*8 +: 8] = m_arlen[comb_master*8 +: 8];
-          s_arsize[comb_slave*3 +: 3] = m_arsize[comb_master*3 +: 3];
-          s_arburst[comb_slave*2 +: 2] = m_arburst[comb_master*2 +: 2];
-          m_arready[comb_master] = s_arready[comb_slave];
+    for (resp_master = 0; resp_master < 4; resp_master = resp_master + 1) begin
+      for (resp_slave = 0; resp_slave < 4; resp_slave = resp_slave + 1) begin
+        response_master = s_rid[resp_slave*SID_WIDTH + MID_WIDTH +: 2];
+        if (!m_rvalid[resp_master] && s_rvalid[resp_slave] &&
+            response_master == resp_master[1:0]) begin
+          m_rvalid[resp_master] = 1'b1;
+          m_rdata[resp_master*32 +: 32] = s_rdata[resp_slave*32 +: 32];
+          m_rresp[resp_master*2 +: 2] = s_rresp[resp_slave*2 +: 2];
+          m_rid[resp_master*MID_WIDTH +: MID_WIDTH] =
+              s_rid[resp_slave*SID_WIDTH +: MID_WIDTH];
+          m_rlast[resp_master] = s_rlast[resp_slave];
+          s_rready[resp_slave] = m_rready[resp_master];
         end
-        if (!s_awvalid[comb_slave] && m_awvalid[comb_master] && !write_busy[comb_master] &&
-            decode_target(m_awaddr[comb_master*32 + 28 +: 4]) == comb_slave[1:0]) begin
-          s_awvalid[comb_slave] = 1'b1;
-          s_awaddr[comb_slave*32 +: 32] = m_awaddr[comb_master*32 +: 32];
-          s_awid[comb_slave*SID_WIDTH +: SID_WIDTH] =
-              {comb_master[1:0], m_awid[comb_master*MID_WIDTH +: MID_WIDTH]};
-          s_awlen[comb_slave*8 +: 8] = m_awlen[comb_master*8 +: 8];
-          s_awsize[comb_slave*3 +: 3] = m_awsize[comb_master*3 +: 3];
-          s_awburst[comb_slave*2 +: 2] = m_awburst[comb_master*2 +: 2];
-          m_awready[comb_master] = s_awready[comb_slave];
-        end
-      end
-    end
-
-    // AXI4 W has no ID, so an accepted AW records each master's target.
-    for (comb_slave = 0; comb_slave < 4; comb_slave = comb_slave + 1) begin
-      for (comb_master = 0; comb_master < 4; comb_master = comb_master + 1) begin
-        if (!s_wvalid[comb_slave] && write_busy[comb_master] &&
-            write_target[comb_master] == comb_slave[1:0] && m_wvalid[comb_master]) begin
-          s_wvalid[comb_slave] = 1'b1;
-          s_wdata[comb_slave*32 +: 32] = m_wdata[comb_master*32 +: 32];
-          s_wstrb[comb_slave*4 +: 4] = m_wstrb[comb_master*4 +: 4];
-          s_wlast[comb_slave] = m_wlast[comb_master];
-          m_wready[comb_master] = s_wready[comb_slave];
-        end
-      end
-    end
-
-    // Response IDs carry the original master index in their upper bits.
-    for (comb_master = 0; comb_master < 4; comb_master = comb_master + 1) begin
-      for (comb_slave = 0; comb_slave < 4; comb_slave = comb_slave + 1) begin
-        response_master = s_rid[comb_slave*SID_WIDTH + MID_WIDTH +: 2];
-        if (!m_rvalid[comb_master] && s_rvalid[comb_slave] &&
-            response_master == comb_master[1:0]) begin
-          m_rvalid[comb_master] = 1'b1;
-          m_rdata[comb_master*32 +: 32] = s_rdata[comb_slave*32 +: 32];
-          m_rresp[comb_master*2 +: 2] = s_rresp[comb_slave*2 +: 2];
-          m_rid[comb_master*MID_WIDTH +: MID_WIDTH] =
-              s_rid[comb_slave*SID_WIDTH +: MID_WIDTH];
-          m_rlast[comb_master] = s_rlast[comb_slave];
-          s_rready[comb_slave] = m_rready[comb_master];
-        end
-
-        response_master = s_bid[comb_slave*SID_WIDTH + MID_WIDTH +: 2];
-        if (!m_bvalid[comb_master] && s_bvalid[comb_slave] &&
-            response_master == comb_master[1:0]) begin
-          m_bvalid[comb_master] = 1'b1;
-          m_bresp[comb_master*2 +: 2] = s_bresp[comb_slave*2 +: 2];
-          m_bid[comb_master*MID_WIDTH +: MID_WIDTH] =
-              s_bid[comb_slave*SID_WIDTH +: MID_WIDTH];
-          s_bready[comb_slave] = m_bready[comb_master];
+        response_master = s_bid[resp_slave*SID_WIDTH + MID_WIDTH +: 2];
+        if (!m_bvalid[resp_master] && s_bvalid[resp_slave] &&
+            response_master == resp_master[1:0]) begin
+          m_bvalid[resp_master] = 1'b1;
+          m_bresp[resp_master*2 +: 2] = s_bresp[resp_slave*2 +: 2];
+          m_bid[resp_master*MID_WIDTH +: MID_WIDTH] =
+              s_bid[resp_slave*SID_WIDTH +: MID_WIDTH];
+          s_bready[resp_slave] = m_bready[resp_master];
         end
       end
     end
