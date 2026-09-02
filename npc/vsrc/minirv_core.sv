@@ -2,6 +2,7 @@
 module minirv_core (
   input  logic         clock,
   input  logic         reset,
+  input  logic         step,
   output logic [31:0]  imem_addr,
   input  logic [31:0]  imem_rdata,
   output logic         dmem_read,
@@ -31,6 +32,7 @@ module minirv_core (
   logic [31:0] rs2_value;
   logic [31:0] rd_value;
   logic        rd_write;
+  logic        regfile_write;
   logic [3:0]  rs1_idx;
   logic [3:0]  rs2_idx;
   logic [3:0]  rd_idx;
@@ -41,6 +43,7 @@ module minirv_core (
   assign rs1_idx = inst[18:15];
   assign rs2_idx = inst[23:20];
   assign rd_idx = inst[10:7];
+  assign regfile_write = rd_write && step;
 
   minirv_regfile u_regfile (
     .clock(clock),
@@ -48,7 +51,7 @@ module minirv_core (
     .rs1_idx(rs1_idx),
     .rs2_idx(rs2_idx),
     .rd_idx(rd_idx),
-    .rd_write(rd_write),
+    .rd_write(regfile_write),
     .rd_value(rd_value),
     .rs1_value(rs1_value),
     .rs2_value(rs2_value),
@@ -83,11 +86,14 @@ module minirv_core (
       commit_pc <= 32'd0;
       commit_inst <= 32'd0;
     end else begin
-      pc_reg <= next_pc;
-      cycle_count <= cycle_count + 64'd1;
-      commit_valid <= 1'b1;
-      commit_pc <= pc_reg;
-      commit_inst <= inst;
+      commit_valid <= 1'b0;
+      if (step) begin
+        pc_reg <= next_pc;
+        cycle_count <= cycle_count + 64'd1;
+        commit_valid <= 1'b1;
+        commit_pc <= pc_reg;
+        commit_inst <= inst;
+      end
     end
   end
 

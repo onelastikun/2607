@@ -36,7 +36,7 @@ module nvboard_top (
   logic [31:0] display_value;
 
   minirv_core u_core (
-    .clock(clock), .reset(reset),
+    .clock(clock), .reset(reset), .step(1'b1),
     .imem_addr(imem_addr), .imem_rdata(imem_rdata),
     .dmem_read(dmem_read), .dmem_len(dmem_len), .dmem_addr(dmem_addr),
     .dmem_rdata(dmem_rdata), .dmem_write(dmem_write),

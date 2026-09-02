@@ -22,6 +22,7 @@ class Simulator {
   std::uint32_t gpr(unsigned index) const;
   std::uint32_t pc() const;
   std::uint32_t commit_pc() const;
+  bool commit_valid() const;
 
  private:
   void half_cycle(std::uint8_t clock);

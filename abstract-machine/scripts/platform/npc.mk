@@ -25,7 +25,7 @@ image: image-dep
 	@echo + OBJCOPY "->" $(IMAGE_REL).bin
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
-NPC_RUN_FLAGS ?= MAX_CYCLES=10000000
+NPC_RUN_FLAGS ?= MAX_CYCLES=100000000
 
 run: insert-arg
 	$(MAKE) -C $(NPC_HOME) run IMG=$(IMAGE).bin $(NPC_RUN_FLAGS)

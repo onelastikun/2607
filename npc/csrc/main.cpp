@@ -42,8 +42,10 @@ int main(int argc, char **argv) {
            executed < options.max_cycles) {
       simulator.tick();
       ++executed;
-      if (options.itrace) simulator.print_commit();
-      if (difftest && !difftest->step(simulator)) state.aborted = true;
+      if (simulator.commit_valid()) {
+        if (options.itrace) simulator.print_commit();
+        if (difftest && !difftest->step(simulator)) state.aborted = true;
+      }
     }
 
     if (memory.faulted()) {

@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-E5/E6：NVBoard 软件接入、AM uptime 和 MicroBench test 已通过；准备外部标准测试与总线阶段。
+E7：AXI4-Lite 存储/MMIO 总线接入已通过全量现有回归；准备总线性能优化和多主多从互联。
 
 ## 已完成
 
@@ -175,6 +175,28 @@ E5/E6：NVBoard 软件接入、AM uptime 和 MicroBench test 已通过；准备�
 - `SDL_VIDEODRIVER=dummy make smoke` 运行 100 周期并正常退出；
 - 尚未声明物理 FPGA 板上验证。
 
+## E7 AXI4-Lite 总线基线
+
+已完成：
+
+- MiniRV 核心新增 `step` 提交使能，等待总线期间 PC、寄存器和提交状态保持不变；
+- 新增独立 AXI4-Lite 主设备状态机，串行处理取指、load 和 store；
+- 五个通道分别遵守 valid/ready 握手，地址、写数据和写响应可独立等待；
+- 新增带可配置读写延迟的 AXI4-Lite 物理内存/MMIO 从设备；
+- 串口和计时器访问已通过总线事务到达 C++ 设备模块，CPU 核心不直接调用 DPI-C；
+- C++ DiffTest 改为仅在 `commit_valid` 时推进参考模型；
+- AM 默认周期上限调整为总线多周期执行所需范围。
+
+验证结果：
+
+- 114 条定向指令逐条 DiffTest：通过，630 总线周期完成；
+- AM CPU tests 35 项：全部通过；
+- AM hello 串口：通过；
+- AM timer smoke：通过；
+- MicroBench test：10 项全部通过，65899655 总线周期完成；
+- NVBoard 复用核心重新构建并完成 100 周期 smoke：通过；
+- AXI4-Lite 基线相对直连 MicroBench 的 8368310 周期约慢 7.87 倍，作为后续优化基线。
+
 ## 下一步
 
-继续获取并运行 `riscv-tests`/`riscv-arch-test` 官方测试，然后进入 E7 简易总线。
+优化取指与总线响应路径，并实现带 ID/地址译码的多主多从 AXI 互联；继续获取外部标准测试仓库。

@@ -58,5 +58,6 @@ std::uint32_t Simulator::gpr(unsigned index) const {
 
 std::uint32_t Simulator::pc() const { return dut_->pc; }
 std::uint32_t Simulator::commit_pc() const { return dut_->commit_pc; }
+bool Simulator::commit_valid() const { return dut_->commit_valid; }
 
 }  // namespace npc
