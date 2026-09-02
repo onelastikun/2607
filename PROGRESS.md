@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-E7：NPC 已实际经过 4x4 AXI 互联访问主存和 MMIO，并通过全量现有回归。
+E7：NPC 已实际经过 4x4 AXI 互联访问主存和 MMIO，并通过现有回归；RV32I 官方测试已接入并通过。
 
 ## 已完成
 
@@ -257,6 +257,29 @@ E7：NPC 已实际经过 4x4 AXI 互联访问主存和 MMIO，并通过全量现
 - 访问 `0xc0000000` 的 bus-error 测试正确返回失败并报告总线响应错误；
 - Verilator 与 C++ 严格警告构建：通过。
 
+## 官方 RV32I 测试
+
+已完成：
+
+- 使用本机官方 fork 的 `riscv-tests` 源码，按 `ARCH=minirv-npc` 接入 AM 构建；
+- 通过官方 `TEST_ISA=i` 测试集合运行 38 项 RV32I 整数测试；
+- 排除 `fence_i` 和 `ma_data`：前者当前设计未实现 I-cache fence 语义，后者依赖非对齐/异常环境，不纳入当前 MiniRV 裁剪集合；
+- 所有 38 项均通过，包括算术、逻辑、移位、比较、分支、跳转、加载和存储。
+
+验证命令：
+
+```bash
+make -C riscv-tests clean
+make -C riscv-tests ARCH=minirv-npc TEST_ISA=i EXCLUDE_TEST='fence_i ma_data' run
+```
+
+结果：`test list [38 item(s)]`，全部 `PASS`。
+
+环境情况：
+
+- `riscv-tests` 已通过 GitHub codeload 归档获取到当前工作区，但作为外部测试依赖不纳入根仓库提交；
+- `riscv-arch-test-am` 和 `archbench` 仍需网络下载，未以本地已有结果冒充通过。
+
 ## 下一步
 
-继续获取并运行 `riscv-tests`/`riscv-arch-test`，补充最终全量回归和完成度审计；不进入“接入 SoC”。
+获取并运行 `riscv-arch-test`；完成最终全量回归和完成度审计；不进入“接入 SoC”。
