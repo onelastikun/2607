@@ -2,7 +2,11 @@ TOPNAME       := top
 BUILD_DIR     := $(abspath build)
 OBJ_DIR       := $(BUILD_DIR)/obj_dir
 BIN           := $(OBJ_DIR)/V$(TOPNAME)
+DIRECTED_ELF  := $(BUILD_DIR)/rv32e-directed.elf
+DIRECTED_BIN  := $(BUILD_DIR)/rv32e-directed.bin
 VERILATOR     ?= verilator
+RISCV_CC       ?= riscv64-linux-gnu-gcc
+RISCV_OBJCOPY  ?= riscv64-linux-gnu-objcopy
 export CCACHE_DISABLE ?= 1
 MAX_CYCLES    ?= 100
 IMG           ?=
@@ -38,6 +42,18 @@ $(BIN): $(VSRCS) $(CSRCS) Makefile
 run: $(BIN)
 	$(BIN) $(RUN_ARGS)
 
+$(DIRECTED_ELF): tests/rv32e-directed.S tests/linker.ld
+	@mkdir -p $(BUILD_DIR)
+	$(RISCV_CC) -march=rv32e_zicsr -mabi=ilp32e -fno-pic -fno-pie \
+		-nostdlib -nostartfiles -static -mno-relax -Wl,--build-id=none \
+		-Wl,-T,$(abspath tests/linker.ld) -o $@ $<
+
+$(DIRECTED_BIN): $(DIRECTED_ELF)
+	$(RISCV_OBJCOPY) -O binary $< $@
+
+test-rv32e: $(BIN) $(DIRECTED_BIN)
+	$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 $(if $(filter-out 0,$(ITRACE)),--itrace)
+
 sim:
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
 	@$(MAKE) run MAX_CYCLES=$(MAX_CYCLES) IMG=$(IMG) WAVE=$(WAVE) ITRACE=$(ITRACE)
@@ -45,6 +61,6 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run sim clean
+.PHONY: all run test-rv32e sim clean
 
 include ../Makefile

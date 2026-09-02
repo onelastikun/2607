@@ -79,6 +79,19 @@ class Memory {
     return value;
   }
 
+  void write(std::uint32_t address, std::uint32_t value, std::uint8_t mask) {
+    for (std::uint8_t i = 0; i < 4; ++i) {
+      if ((mask & (1u << i)) == 0) continue;
+      const auto byte_address = address + i;
+      if (!contains(byte_address, 1)) {
+        report_bad_access("write", byte_address, 1);
+        return;
+      }
+      const auto offset = static_cast<std::size_t>(byte_address - kPmemBase);
+      bytes_[offset] = static_cast<std::uint8_t>(value >> (i * 8));
+    }
+  }
+
  private:
   bool contains(std::uint32_t address, std::uint8_t length) const {
     if (address < kPmemBase) {
@@ -215,6 +228,11 @@ void print_itrace(const Vtop &dut) {
 extern "C" std::uint32_t pmem_read(std::uint32_t address,
                                     std::uint8_t length) {
   return g_memory == nullptr ? 0 : g_memory->read(address, length);
+}
+
+extern "C" void pmem_write(std::uint32_t address, std::uint32_t data,
+                             std::uint8_t mask) {
+  if (g_memory != nullptr) g_memory->write(address, data, mask);
 }
 
 extern "C" void npc_ebreak(std::uint32_t pc, std::uint32_t code) {
