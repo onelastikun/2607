@@ -12,6 +12,8 @@ MAX_CYCLES    ?= 100
 IMG           ?=
 WAVE          ?=
 ITRACE        ?= 0
+DIFF          ?=
+NEMU_REF      ?= $(abspath ../nemu/build/riscv32-nemu-interpreter-so)
 
 VSRCS         := $(shell find $(abspath vsrc) -type f \( -name '*.v' -o -name '*.sv' \) | sort)
 CSRCS         := $(shell find $(abspath csrc) -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' \) | sort)
@@ -20,7 +22,8 @@ VERILATOR_FLAGS := --cc --exe --build --trace \
                    --top-module $(TOPNAME) \
                    --Mdir $(OBJ_DIR) \
                    -Wall -Wno-DECLFILENAME \
-                   -CFLAGS "-std=c++17 -O2 -Wall -Wextra"
+                   -CFLAGS "-std=c++17 -O2 -Wall -Wextra" \
+                   -LDFLAGS "-ldl"
 
 RUN_ARGS      := --max-cycles $(MAX_CYCLES)
 ifneq ($(strip $(IMG)),)
@@ -31,6 +34,9 @@ RUN_ARGS      += --wave $(abspath $(WAVE))
 endif
 ifneq ($(ITRACE),0)
 RUN_ARGS      += --itrace
+endif
+ifneq ($(strip $(DIFF)),)
+RUN_ARGS      += --diff $(abspath $(DIFF))
 endif
 
 all: $(BIN)
@@ -54,13 +60,17 @@ $(DIRECTED_BIN): $(DIRECTED_ELF)
 test-rv32e: $(BIN) $(DIRECTED_BIN)
 	$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 $(if $(filter-out 0,$(ITRACE)),--itrace)
 
+test-diff: $(BIN) $(DIRECTED_BIN)
+	@test -f $(NEMU_REF) || { echo "missing NEMU reference: $(NEMU_REF)"; exit 1; }
+	$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 --diff $(NEMU_REF) 		$(if $(filter-out 0,$(ITRACE)),--itrace)
+
 sim:
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
-	@$(MAKE) run MAX_CYCLES=$(MAX_CYCLES) IMG=$(IMG) WAVE=$(WAVE) ITRACE=$(ITRACE)
+	@$(MAKE) run MAX_CYCLES=$(MAX_CYCLES) IMG=$(IMG) WAVE=$(WAVE) ITRACE=$(ITRACE) DIFF=$(DIFF)
 
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-rv32e sim clean
+.PHONY: all run test-rv32e test-diff sim clean
 
 include ../Makefile

@@ -1,6 +1,8 @@
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 
+#include <dlfcn.h>
+
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -21,6 +23,7 @@ constexpr std::size_t kPmemSize = 128u * 1024u * 1024u;
 struct Options {
   std::string image_path;
   std::string wave_path;
+  std::string diff_path;
   std::uint64_t max_cycles = 100;
   bool itrace = false;
 };
@@ -79,6 +82,8 @@ class Memory {
     return value;
   }
 
+  const std::uint8_t *data() const { return bytes_.data(); }
+
   void write(std::uint32_t address, std::uint32_t value, std::uint8_t mask) {
     for (std::uint8_t i = 0; i < 4; ++i) {
       if ((mask & (1u << i)) == 0) continue;
@@ -132,7 +137,8 @@ void Memory::report_bad_access(const char *operation, std::uint32_t address,
     std::cerr << "error: " << message << '\n';
   }
   std::cerr << "usage: " << program
-            << " [--image FILE] [--max-cycles N] [--wave FILE] [--itrace]\n";
+            << " [--image FILE] [--max-cycles N] [--wave FILE] [--itrace]"
+               " [--diff REF_SO]\n";
   std::exit(EXIT_FAILURE);
 }
 
@@ -160,6 +166,9 @@ Options parse_options(int argc, char **argv) {
       options.wave_path = argv[i];
     } else if (arg == "--itrace") {
       options.itrace = true;
+    } else if (arg == "--diff") {
+      if (++i >= argc) usage(argv[0], "missing value after --diff");
+      options.diff_path = argv[i];
     } else if (arg == "--help" || arg == "-h") {
       usage(argv[0]);
     }
@@ -223,6 +232,90 @@ void print_itrace(const Vtop &dut) {
             << std::dec << '\n';
 }
 
+class Difftest {
+ public:
+  Difftest(const std::string &path, const Memory &memory, std::size_t image_size) {
+    handle_ = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+    if (handle_ == nullptr) {
+      throw std::runtime_error("cannot load DiffTest reference: " +
+                               std::string(dlerror()));
+    }
+    memcpy_ = load_symbol<MemcpyFn>("difftest_memcpy");
+    regcpy_ = load_symbol<RegcpyFn>("difftest_regcpy");
+    exec_ = load_symbol<ExecFn>("difftest_exec");
+    init_ = load_symbol<InitFn>("difftest_init");
+    init_(0);
+    memcpy_(kPmemBase, const_cast<std::uint8_t *>(memory.data()), image_size,
+            kToRef);
+    CpuState initial{};
+    initial.pc = kPmemBase;
+    regcpy_(&initial, kToRef);
+    std::cout << "DiffTest reference: " << path << '\n';
+  }
+
+  ~Difftest() {
+    if (handle_ != nullptr) dlclose(handle_);
+  }
+
+  bool step(const Simulator &simulator) {
+    exec_(1);
+    CpuState reference{};
+    regcpy_(&reference, kToDut);
+    const auto &dut = simulator.dut();
+    bool matched = true;
+    if (reference.pc != dut.pc) {
+      report("pc", dut.commit_pc, reference.pc, dut.pc);
+      matched = false;
+    }
+    for (unsigned i = 0; i < 16; ++i) {
+      const auto dut_value = simulator.gpr(i);
+      if (reference.gpr[i] != dut_value) {
+        report(("x" + std::to_string(i)).c_str(), dut.commit_pc,
+               reference.gpr[i], dut_value);
+        matched = false;
+      }
+    }
+    return matched;
+  }
+
+ private:
+  struct CpuState {
+    std::uint32_t gpr[16];
+    std::uint32_t pc;
+  };
+  using MemcpyFn = void (*)(std::uint32_t, void *, std::size_t, bool);
+  using RegcpyFn = void (*)(void *, bool);
+  using ExecFn = void (*)(std::uint64_t);
+  using InitFn = void (*)(int);
+  static constexpr bool kToDut = false;
+  static constexpr bool kToRef = true;
+
+  template <typename T>
+  T load_symbol(const char *name) {
+    dlerror();
+    void *symbol = dlsym(handle_, name);
+    if (const char *error = dlerror(); error != nullptr) {
+      throw std::runtime_error("missing DiffTest symbol " + std::string(name) +
+                               ": " + error);
+    }
+    return reinterpret_cast<T>(symbol);
+  }
+
+  static void report(const char *name, std::uint32_t commit_pc,
+                     std::uint32_t reference, std::uint32_t dut) {
+    std::cerr << "DiffTest mismatch after pc=0x" << std::hex << std::setw(8)
+              << std::setfill('0') << commit_pc << ": " << name
+              << " ref=0x" << std::setw(8) << reference << " dut=0x"
+              << std::setw(8) << dut << std::dec << '\n';
+  }
+
+  void *handle_ = nullptr;
+  MemcpyFn memcpy_ = nullptr;
+  RegcpyFn regcpy_ = nullptr;
+  ExecFn exec_ = nullptr;
+  InitFn init_ = nullptr;
+};
+
 }  // namespace
 
 extern "C" std::uint32_t pmem_read(std::uint32_t address,
@@ -263,6 +356,10 @@ int main(int argc, char **argv) {
     Simulator simulator(options);
     simulator.reset();
     g_memory_checks_enabled = true;
+    std::unique_ptr<Difftest> difftest;
+    if (!options.diff_path.empty()) {
+      difftest = std::make_unique<Difftest>(options.diff_path, memory, image_size);
+    }
 
     std::uint64_t executed = 0;
     while (!g_run_state.halted && !g_run_state.aborted &&
@@ -270,6 +367,9 @@ int main(int argc, char **argv) {
       simulator.tick();
       ++executed;
       if (options.itrace) print_itrace(simulator.dut());
+      if (difftest && !difftest->step(simulator)) {
+        g_run_state.aborted = true;
+      }
     }
 
     if (g_run_state.aborted) {

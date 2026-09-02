@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-E4：MiniRV/RV32E 定向自检已通过，NEMU RV32E 参考模型接口已构建，正在接入 NPC DiffTest。
+E4：NPC 与 NEMU 的 RV32E 逐指令 DiffTest 已通过，准备接入官方测试。
 
 ## 已完成
 
@@ -83,6 +83,25 @@ E4：MiniRV/RV32E 定向自检已通过，NEMU RV32E 参考模型接口已构建
 - 官方测试和 AM/NVBoard 仓库的 GitHub 下载已重试两次；当前网络分别出现 TLS 中断和 443 连接超时；
 - 该网络问题不阻止继续使用本地 NEMU 接入 DiffTest；后续在需要官方测试时再次重试。
 
+## NEMU ISA 与 NPC DiffTest
+
+已完成：
+
+- 在 NEMU 中实现与 MiniRV 对应的 RV32E 基础整数指令；
+- NPC 支持通过 `--diff REF_SO` 动态加载参考模型；
+- 初始化时同步程序镜像、PC 和寄存器；
+- 每条 DUT 提交后驱动 NEMU 执行一条指令；
+- 比较下一 PC 和 16 个通用寄存器；
+- 不一致时报告提交 PC、寄存器名、参考值和 DUT 值；
+- Makefile 新增 `test-diff` 自动回归目标。
+
+验证结果：
+
+- `make -C npc clean && make -C npc test-diff`：通过；
+- DUT 与 NEMU 对 114 条 RV32E 定向测试逐条一致；
+- DUT 和 NEMU 均在 `0x800001e0` 报告 good trap；
+- Verilator `-Wall` 构建无警告。
+
 ## 下一步
 
-在 NPC 中动态加载 NEMU 共享库，按每条提交指令比较 PC 和 16 个通用寄存器。
+重试初始化官方测试仓库，运行 MiniRV、`riscv-tests` 和 `riscv-arch-test`。
