@@ -22,7 +22,7 @@ VERILATOR_FLAGS := --cc --exe --build --trace \
                    --top-module $(TOPNAME) \
                    --Mdir $(OBJ_DIR) \
                    -Wall -Wno-DECLFILENAME \
-                   -CFLAGS "-std=c++17 -O2 -Wall -Wextra" \
+                   -CFLAGS "-std=c++17 -O2 -Wall -Wextra -I$(abspath csrc/include)" \
                    -LDFLAGS "-ldl"
 
 RUN_ARGS      := --max-cycles $(MAX_CYCLES)
