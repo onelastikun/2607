@@ -76,6 +76,13 @@ test-diff: $(BIN) $(DIRECTED_BIN)
 	$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 --diff $(NEMU_REF) 		$(if $(filter-out 0,$(ITRACE)),--itrace)
 
 
+test-itrace: $(BIN) $(DIRECTED_BIN)
+	@output=`$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 --itrace`; \
+		status=$$?; printf '%s\n' "$$output"; test $$status -eq 0; \
+		printf '%s\n' "$$output" | grep -q \
+		  '0x80000000: 0x00000513  addi x10, x0, 0'; \
+		printf '%s\n' "$$output" | grep -q 'ebreak'
+
 test-bus-error: $(BIN) $(BUS_ERROR_BIN)
 	@set +e; output=`$(BIN) --image $(BUS_ERROR_BIN) --max-cycles 100 2>&1`; \
 		status=$$?; set -e; printf '%s\n' "$$output"; \
@@ -90,6 +97,6 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-rv32e test-diff test-bus-error sim clean
+.PHONY: all run test-rv32e test-diff test-itrace test-bus-error sim clean
 
 include ../Makefile

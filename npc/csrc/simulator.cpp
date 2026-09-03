@@ -7,6 +7,7 @@
 #include <iostream>
 
 #include "Vtop.h"
+#include "disasm.h"
 
 namespace npc {
 
@@ -36,6 +37,7 @@ void Simulator::reset() {
 void Simulator::tick() {
   half_cycle(0);
   half_cycle(1);
+  record_commit();
 }
 
 void Simulator::half_cycle(std::uint8_t clock) {
@@ -45,11 +47,29 @@ void Simulator::half_cycle(std::uint8_t clock) {
   context_->timeInc(1);
 }
 
+void Simulator::record_commit() {
+  if (!dut_->commit_valid) return;
+  constexpr std::size_t kTraceDepth = 16;
+  recent_commits_.push_back({dut_->commit_pc, dut_->commit_inst});
+  if (recent_commits_.size() > kTraceDepth) recent_commits_.pop_front();
+}
+
 void Simulator::print_commit() const {
   if (!dut_->commit_valid) return;
   std::cout << "0x" << std::hex << std::setw(8) << std::setfill('0')
             << dut_->commit_pc << ": 0x" << std::setw(8) << dut_->commit_inst
-            << std::dec << '\n';
+            << std::dec << "  "
+            << disassemble(dut_->commit_pc, dut_->commit_inst) << '\n';
+}
+
+void Simulator::print_recent_commits(std::ostream &out) const {
+  out << "recent commits:\n";
+  for (const auto &commit : recent_commits_) {
+    out << "  0x" << std::hex << std::setw(8) << std::setfill('0')
+        << commit.pc << ": 0x" << std::setw(8) << commit.instruction
+        << std::dec << "  " << disassemble(commit.pc, commit.instruction)
+        << '\n';
+  }
 }
 
 std::uint32_t Simulator::gpr(unsigned index) const {

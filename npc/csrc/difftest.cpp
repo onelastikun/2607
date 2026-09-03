@@ -53,12 +53,13 @@ bool Difftest::step(const Simulator &simulator) {
   }
   for (unsigned i = 0; i < 16; ++i) {
     const auto dut_value = simulator.gpr(i);
-    if (reference.gpr[i] != dut_value) {
+    if (matched && reference.gpr[i] != dut_value) {
       const std::string name = "x" + std::to_string(i);
       report(name.c_str(), simulator.commit_pc(), reference.gpr[i], dut_value);
       matched = false;
     }
   }
+  if (!matched) simulator.print_recent_commits(std::cerr);
   return matched;
 }
 
