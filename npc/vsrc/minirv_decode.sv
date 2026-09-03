@@ -1,5 +1,5 @@
-// Pure combinational decoder and execute path for the MiniRV/RV32E subset.
-// Sequential architectural state is intentionally kept out of this module.
+// MiniRV/RV32E 的组合译码与执行数据通路。
+// 本模块不保存时序状态：输入变化后立即计算控制信号、写回值和下一 PC。
 module minirv_decode (
   input  logic [31:0] pc,
   input  logic [31:0] inst,
@@ -19,9 +19,11 @@ module minirv_decode (
   output logic        illegal
 );
 
+  // RV32E 只有 16 个寄存器；指令寄存器编号的 bit4 为 1 表示非法访问 x16~x31。
   logic rs1_high;
   logic rs2_high;
   logic rd_high;
+  // 各类立即数在这里统一拼接为 32 位，后续指令无需重复处理位域。
   logic [31:0] imm_i;
   logic [31:0] imm_s;
   logic [31:0] imm_b;
@@ -30,6 +32,7 @@ module minirv_decode (
   logic branch_taken;
 
   always_comb begin
+    // 先完成寄存器合法性和 I/S/B/U/J 五类立即数生成。
     rs1_high = inst[19];
     rs2_high = inst[24];
     rd_high = inst[11];
@@ -41,6 +44,7 @@ module minirv_decode (
     imm_j = {{11{inst[31]}}, inst[31], inst[19:12], inst[20],
              inst[30:21], 1'b0};
 
+    // 为所有组合输出提供默认值：既表达普通顺序执行，也避免综合出锁存器。
     next_pc = pc + 32'd4;
     rd_write = 1'b0;
     rd_value = 32'd0;
@@ -55,15 +59,15 @@ module minirv_decode (
     branch_taken = 1'b0;
 
     case (inst[6:0])
-      7'b0110111: begin  // LUI
+      7'b0110111: begin  // LUI：加载高位立即数
         if (rd_high) illegal = 1'b1;
         else begin rd_write = 1'b1; rd_value = imm_u; end
       end
-      7'b0010111: begin  // AUIPC
+      7'b0010111: begin  // AUIPC：PC 加高位立即数
         if (rd_high) illegal = 1'b1;
         else begin rd_write = 1'b1; rd_value = pc + imm_u; end
       end
-      7'b1101111: begin  // JAL
+      7'b1101111: begin  // JAL：PC 相对跳转并保存返回地址
         if (rd_high) illegal = 1'b1;
         else begin
           rd_write = 1'b1;
@@ -71,30 +75,31 @@ module minirv_decode (
           next_pc = pc + imm_j;
         end
       end
-      7'b1100111: begin  // JALR
+      7'b1100111: begin  // JALR：寄存器间接跳转
         if (rd_high || rs1_high || (inst[14:12] != 3'b000)) illegal = 1'b1;
         else begin
           rd_write = 1'b1;
           rd_value = pc + 32'd4;
+          // 规范要求 JALR 清除目标地址最低位。
           next_pc = (rs1_value + imm_i) & 32'hffff_fffe;
         end
       end
-      7'b1100011: begin  // Conditional branches
+      7'b1100011: begin  // 条件分支
         if (rs1_high || rs2_high) illegal = 1'b1;
         else begin
           case (inst[14:12])
-            3'b000: branch_taken = (rs1_value == rs2_value);                  // BEQ
-            3'b001: branch_taken = (rs1_value != rs2_value);                  // BNE
-            3'b100: branch_taken = ($signed(rs1_value) < $signed(rs2_value)); // BLT
-            3'b101: branch_taken = ($signed(rs1_value) >= $signed(rs2_value));// BGE
-            3'b110: branch_taken = (rs1_value < rs2_value);                   // BLTU
-            3'b111: branch_taken = (rs1_value >= rs2_value);                  // BGEU
+            3'b000: branch_taken = (rs1_value == rs2_value);                   // 相等
+            3'b001: branch_taken = (rs1_value != rs2_value);                   // 不相等
+            3'b100: branch_taken = ($signed(rs1_value) < $signed(rs2_value));  // 有符号小于
+            3'b101: branch_taken = ($signed(rs1_value) >= $signed(rs2_value)); // 有符号大于等于
+            3'b110: branch_taken = (rs1_value < rs2_value);                    // 无符号小于
+            3'b111: branch_taken = (rs1_value >= rs2_value);                   // 无符号大于等于
             default: illegal = 1'b1;
           endcase
           if (branch_taken && !illegal) next_pc = pc + imm_b;
         end
       end
-      7'b0000011: begin  // Loads
+      7'b0000011: begin  // load：按宽度读取并完成符号或零扩展
         if (rd_high || rs1_high) illegal = 1'b1;
         else begin
           dmem_addr = rs1_value + imm_i;
@@ -110,10 +115,11 @@ module minirv_decode (
           endcase
         end
       end
-      7'b0100011: begin  // Stores
+      7'b0100011: begin  // store：生成地址、写数据和逐字节写掩码
         if (rs1_high || rs2_high) illegal = 1'b1;
         else begin
           dmem_addr = rs1_value + imm_s;
+          // 主存接口始终传完整 32 位数据，sb/sh 通过低位写掩码选择有效字节。
           dmem_wdata = rs2_value;
           dmem_write = 1'b1;
           case (inst[14:12])
@@ -124,7 +130,7 @@ module minirv_decode (
           endcase
         end
       end
-      7'b0010011: begin  // Immediate ALU operations
+      7'b0010011: begin  // 立即数 ALU 指令
         if (rd_high || rs1_high) illegal = 1'b1;
         else begin
           rd_write = 1'b1;
@@ -149,7 +155,7 @@ module minirv_decode (
           if (illegal) rd_write = 1'b0;
         end
       end
-      7'b0110011: begin  // Register ALU operations
+      7'b0110011: begin  // 寄存器 ALU 指令
         if (rd_high || rs1_high || rs2_high) illegal = 1'b1;
         else begin
           rd_write = 1'b1;
@@ -169,9 +175,11 @@ module minirv_decode (
           if (illegal) rd_write = 1'b0;
         end
       end
-      7'b0001111: begin  // FENCE is a no-op in this single-core model.
+      // 当前单核没有缓存，普通 FENCE 不需要额外硬件动作。
+      7'b0001111: begin
         if (inst[14:12] != 3'b000) illegal = 1'b1;
       end
+      // 本阶段只实现用来结束仿真的 EBREAK，其他 SYSTEM 编码视为非法。
       7'b1110011: begin
         if (inst == 32'h0010_0073) is_ebreak = 1'b1;
         else illegal = 1'b1;

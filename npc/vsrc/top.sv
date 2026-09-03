@@ -1,4 +1,5 @@
-// NPC simulation top using an AXI4-Lite master and configurable-latency targets.
+// NPC 仿真顶层：连接 MiniRV 核心、AXI4-Lite 主设备、AXI4 适配器和系统互联。
+// 本模块只做平台连接与 DPI-C 事件上报，不把宿主机逻辑混入 CPU 核心。
 module top #(
   parameter int BUS_READ_DELAY = 0,
   parameter int BUS_WRITE_DELAY = 0
@@ -14,6 +15,8 @@ module top #(
   output logic [511:0] gpr_state
 );
 
+  // 三个 DPI-C 回调分别表示正常结束、非法指令和总线错误。
+  // 回调只记录状态，宿主进程的最终退出由 C++ 主循环统一处理。
   import "DPI-C" function void npc_ebreak(
     input int unsigned trap_pc,
     input int unsigned code
@@ -27,6 +30,7 @@ module top #(
     input int unsigned cause
   );
 
+  // 核心侧接口：core_step 只有在当前指令及其必要访存全部完成时才拉高。
   logic        core_step;
   logic [31:0] core_imem_addr;
   logic [31:0] fetched_inst;
@@ -45,6 +49,7 @@ module top #(
   logic        master_protocol_error;
   logic        fabric_error;
 
+  // CPU 总线主设备使用的 AXI4-Lite 五通道信号。
   logic        arvalid;
   logic        arready;
   logic [31:0] araddr;
@@ -63,6 +68,7 @@ module top #(
   logic        bready;
   logic [1:0]  bresp;
 
+  // 添加 ID、LEN、SIZE、BURST 等字段后的单拍 AXI4 信号。
   logic        axi_arvalid;
   logic        axi_arready;
   logic [31:0] axi_araddr;
@@ -93,8 +99,10 @@ module top #(
   logic [1:0]  axi_bresp;
   logic [3:0]  axi_bid;
 
+  // 保留三类错误来源，DPI-C 日志可直接指出故障层次。
   assign bus_error = lite_bus_error || master_protocol_error || fabric_error;
 
+  // CPU 核心只看到简单的指令/数据请求，不关心 AXI 时序。
   minirv_core u_core (
     .clock(clock), .reset(reset), .step(core_step),
     .imem_addr(core_imem_addr), .imem_rdata(fetched_inst),
@@ -107,6 +115,7 @@ module top #(
     .commit_inst(commit_inst), .gpr_state(gpr_state)
   );
 
+  // 总线主设备把核心请求转换为握手事务，并在响应完成时产生 core_step。
   minirv_axi_lite_master u_master (
     .clock(clock), .reset(reset), .core_pc(core_imem_addr),
     .core_inst(fetched_inst),
@@ -122,6 +131,7 @@ module top #(
     .bus_error(lite_bus_error)
   );
 
+  // 适配器为 Lite 请求补齐 AXI4 元数据，以便经过带 ID 的 4x4 互联。
   axi_lite_master_to_axi4 u_master_adapter (
     .lite_arvalid(arvalid), .lite_arready(arready), .lite_araddr(araddr),
     .lite_rvalid(rvalid), .lite_rready(rready), .lite_rdata(rdata),
@@ -143,6 +153,7 @@ module top #(
     .protocol_error(master_protocol_error)
   );
 
+  // 系统互联完成地址译码，并把事务送往主存、MMIO 或错误从设备。
   axi4_system_interconnect #(
     .READ_DELAY(BUS_READ_DELAY), .WRITE_DELAY(BUS_WRITE_DELAY)
   ) u_system_interconnect (
@@ -159,6 +170,8 @@ module top #(
     .bid(axi_bid), .bus_error(fabric_error)
   );
 
+  // 只在指令提交边界上报事件，保证 PC、指令和退出码属于同一条客户指令。
+  // 总线错误优先于非法指令和 ebreak，避免一次故障产生相互矛盾的结果。
   always_ff @(posedge clock) begin
     if (!reset && core_step) begin
       if (bus_error) npc_bus_error(pc,

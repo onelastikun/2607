@@ -1,7 +1,6 @@
-// Four-master/four-slave AXI4 interconnect for single-beat transactions.
-// IDs are extended with the master index so read/write responses route without
-// global ordering state. Burst fields are forwarded, but this project issues
-// only LEN=0 transactions before SoC integration.
+// 面向单拍事务的 4 主 4 从 AXI4 互联。
+// 下游 ID 高 2 位附加主设备编号，响应返回时据此恢复路由，无需全局顺序表。
+// 接口会透传突发字段，但“接入 SoC”前的主设备只会发出 LEN=0 的单拍事务。
 module axi4_interconnect_4x4 #(
   parameter int MID_WIDTH = 4,
   parameter int SID_WIDTH = MID_WIDTH + 2
@@ -72,6 +71,7 @@ module axi4_interconnect_4x4 #(
   input  logic [4*SID_WIDTH-1:0]       s_bid
 );
 
+  // W 通道本身没有 ID，必须在 AW 握手后记住每个主设备选中的从设备。
   logic [3:0] write_busy;
   logic [1:0] write_target [0:3];
   integer ar_master;
@@ -85,15 +85,18 @@ module axi4_interconnect_4x4 #(
   integer seq_master;
   logic [1:0] response_master;
 
+  // 当前按地址最高 4 位划分窗口；返回值就是从设备槽编号。
   function automatic logic [1:0] decode_target(input logic [3:0] region);
     case (region)
-      4'h8: decode_target = 2'd0;  // main memory
-      4'ha: decode_target = 2'd1;  // MMIO
-      4'hc: decode_target = 2'd2;  // reserved expansion window
-      default: decode_target = 2'd3; // default/error target
+      4'h8: decode_target = 2'd0;  // 主存窗口
+      4'ha: decode_target = 2'd1;  // MMIO 窗口
+      4'hc: decode_target = 2'd2;  // 保留扩展窗口
+      default: decode_target = 2'd3; // 默认错误窗口
     endcase
   endfunction
 
+  // 每个从设备独立仲裁读地址。循环从主设备 0 开始，因此编号小者优先。
+  // s_arvalid 已经置 1 后不再选择其他主设备，保证一个从设备每拍只接收一个 AR。
   always_comb begin : route_read_addresses
     m_arready = 4'd0;
     s_arvalid = 4'd0;
@@ -108,6 +111,7 @@ module axi4_interconnect_4x4 #(
             decode_target(m_araddr[ar_master*32 + 28 +: 4]) == ar_slave[1:0]) begin
           s_arvalid[ar_slave] = 1'b1;
           s_araddr[ar_slave*32 +: 32] = m_araddr[ar_master*32 +: 32];
+          // 高 2 位记录来源主设备，低位保留原始 AXI ID。
           s_arid[ar_slave*SID_WIDTH +: SID_WIDTH] =
               {ar_master[1:0], m_arid[ar_master*MID_WIDTH +: MID_WIDTH]};
           s_arlen[ar_slave*8 +: 8] = m_arlen[ar_master*8 +: 8];
@@ -119,6 +123,7 @@ module axi4_interconnect_4x4 #(
     end
   end
 
+  // 写地址仲裁与读地址独立；同一主设备有未完成写事务时禁止再次接受 AW。
   always_comb begin : route_write_addresses
     m_awready = 4'd0;
     s_awvalid = 4'd0;
@@ -145,6 +150,7 @@ module axi4_interconnect_4x4 #(
     end
   end
 
+  // 只有 AW 已握手并记录目标后，W 数据才允许前往该从设备。
   always_comb begin : route_write_data
     m_wready = 4'd0;
     s_wvalid = 4'd0;
@@ -165,6 +171,8 @@ module axi4_interconnect_4x4 #(
     end
   end
 
+  // 从 RID/BID 的高 2 位找回原主设备，并把低位原始 ID 返回给它。
+  // ready 只反馈给实际被选中的从设备，其他响应保持等待。
   always_comb begin : route_responses
     m_rvalid = 4'd0;
     m_rdata = '0;
@@ -202,6 +210,7 @@ module axi4_interconnect_4x4 #(
     end
   end
 
+  // write_busy 从 AW 握手保持到 B 响应握手，覆盖完整写事务生命周期。
   always_ff @(posedge clock) begin
     if (reset) begin
       write_busy <= 4'd0;

@@ -1,4 +1,5 @@
-// Default target: accepts single-beat traffic and returns an error response.
+// 默认错误从设备：接收未映射窗口的单拍事务，并返回 AXI 错误响应。
+// 这样非法地址不会误落入主存，也不会因为无人拉 ready 而让 CPU 永久等待。
 module axi4_error_slave #(
   parameter int SID_WIDTH = 6
 ) (
@@ -26,6 +27,7 @@ module axi4_error_slave #(
   input  logic [1:0]           awburst,
   input  logic                 wvalid,
   output logic                 wready,
+  // 错误从设备无需使用写数据内容，但仍保留完整 AXI 端口。
   /* verilator lint_off UNUSEDSIGNAL */
   input  logic [31:0]          wdata,
   /* verilator lint_on UNUSEDSIGNAL */
@@ -37,11 +39,13 @@ module axi4_error_slave #(
   output logic [SID_WIDTH-1:0] bid
 );
 
+  // 与正常从设备相同，AW 和 W 可以独立到达，需要分别记录。
   logic aw_seen;
   logic w_seen;
   logic [SID_WIDTH-1:0] pending_awid;
   logic write_protocol_ok;
 
+  // 合法单拍格式返回 DECERR(2'b11)；协议格式错误返回 SLVERR(2'b10)。
   assign arready = !rvalid;
   assign rresp = (arlen == 0 && arsize == 3'd2 && arburst == 2'b01)
                ? 2'b11 : 2'b10;
@@ -53,6 +57,7 @@ module axi4_error_slave #(
                              awaddr[1:0] == 0 && wlast && (|wstrb);
   assign bresp = write_protocol_ok ? 2'b11 : 2'b10;
 
+  // 响应 valid 在 ready 到来前保持；ID 来自对应请求，确保互联能路由回主设备。
   always_ff @(posedge clock) begin
     if (reset) begin
       rvalid <= 1'b0;

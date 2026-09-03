@@ -1,5 +1,5 @@
-// AXI4-Lite slave backed by the C++ physical address space.
-// Read and write responses are delayed to prove the master honors handshakes.
+// 连接 C++ 物理地址空间的 AXI4-Lite 从设备。
+// 可配置读写延迟用于验证主设备会正确保持 valid、地址和数据直到握手完成。
 module axi_lite_pmem #(
   parameter int READ_DELAY = 1,
   parameter int WRITE_DELAY = 1
@@ -25,6 +25,7 @@ module axi_lite_pmem #(
   output logic [1:0]  bresp
 );
 
+  // DPI-C 只存在于平台适配层；CPU 核心和总线协议逻辑都不直接调用 C++。
   import "DPI-C" function int unsigned pmem_read(
     input int unsigned addr,
     input byte unsigned len
@@ -35,9 +36,11 @@ module axi_lite_pmem #(
     input byte unsigned mask
   );
 
+  // 读通道一次只保存一个地址；rvalid 拉高后保持数据，直到主设备接受。
   logic read_pending;
   logic [31:0] read_addr;
   integer read_count;
+  // 写地址和写数据可能先后到达，因此分别保存，再合并成一次写操作。
   logic aw_pending;
   logic [31:0] write_addr;
   logic w_pending;
@@ -49,6 +52,7 @@ module axi_lite_pmem #(
   logic aw_hs;
   logic w_hs;
 
+  // 有未完成响应时停止接收新事务，从结构上保证单 outstanding。
   assign arready = !read_pending && !rvalid;
   assign awready = !aw_pending && !write_wait && !bvalid;
   assign wready = !w_pending && !write_wait && !bvalid;
@@ -58,6 +62,7 @@ module axi_lite_pmem #(
   assign aw_hs = awvalid && awready;
   assign w_hs = wvalid && wready;
 
+  // 所有 ready/valid 对应的数据都在握手沿锁存，等待期间不会依赖上游变化。
   always_ff @(posedge clock) begin
     if (reset) begin
       read_pending <= 1'b0;
@@ -74,6 +79,7 @@ module axi_lite_pmem #(
       write_wait <= 1'b0;
       bvalid <= 1'b0;
     end else begin
+      // R 通道握手后才能撤销 rvalid；随后才可接受下一次 AR。
       if (rvalid && rready) rvalid <= 1'b0;
       if (ar_hs) begin
         read_pending <= 1'b1;
@@ -87,6 +93,7 @@ module axi_lite_pmem #(
         end else read_count <= read_count - 1;
       end
 
+      // AW 和 W 都到达后启动延迟计数，写入完成后才产生 B 响应。
       if (bvalid && bready) bvalid <= 1'b0;
       if (aw_hs) begin aw_pending <= 1'b1; write_addr <= awaddr; end
       if (w_hs) begin

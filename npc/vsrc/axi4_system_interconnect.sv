@@ -1,5 +1,5 @@
-// NPC system fabric: one active CPU master connected through the reusable 4x4
-// interconnect to main memory, MMIO, and two default/error targets.
+// NPC 系统互联封装：把当前 CPU 主设备接入可复用的 4x4 AXI4 互联，
+// 下游连接主存、MMIO 和两个错误从设备。READ/WRITE_DELAY 仅用于延迟回归。
 module axi4_system_interconnect #(
   parameter int READ_DELAY = 0,
   parameter int WRITE_DELAY = 0
@@ -38,9 +38,11 @@ module axi4_system_interconnect #(
   output logic        bus_error
 );
 
+  // 上游 ID 为 4 位；互联追加 2 位主设备编号后，下游 ID 为 6 位。
   localparam int MID_WIDTH = 4;
   localparam int SID_WIDTH = 6;
 
+  // m_* 是互联的 4 路主设备侧打包信号，每一路占固定切片。
   logic [3:0] m_arvalid;
   logic [3:0] m_arready;
   logic [127:0] m_araddr;
@@ -71,6 +73,7 @@ module axi4_system_interconnect #(
   logic [7:0] m_bresp;
   logic [15:0] m_bid;
 
+  // s_* 是互联的 4 路从设备侧打包信号。
   logic [3:0] s_arvalid;
   logic [3:0] s_arready;
   logic [127:0] s_araddr;
@@ -103,7 +106,8 @@ module axi4_system_interconnect #(
   logic [1:0] target_protocol_error;
   logic inactive_master_activity;
 
-  // Only master slot 0 is populated before SoC integration.
+  // “接入 SoC”前只有主设备槽 0 连接 CPU，其余三路固定为空闲。
+  // 把单路端口装入打包总线的最低切片，响应也只从最低切片取回。
   assign m_arvalid = {3'd0, arvalid};
   assign m_araddr = {96'd0, araddr};
   assign m_arid = {12'd0, arid};
@@ -134,13 +138,16 @@ module axi4_system_interconnect #(
   assign m_bready = {3'd0, bready};
   assign bresp = m_bresp[1:0];
   assign bid = m_bid[3:0];
+  // 空闲主设备槽理论上不应收到任何响应；出现活动说明互联路由发生错误。
   assign inactive_master_activity =
       (|m_arready[3:1]) || (|m_rvalid[3:1]) || (|m_rdata[127:32]) ||
       (|m_rresp[7:2]) || (|m_rid[15:4]) || (|m_rlast[3:1]) ||
       (|m_awready[3:1]) || (|m_wready[3:1]) || (|m_bvalid[3:1]) ||
       (|m_bresp[7:2]) || (|m_bid[15:4]);
+  // 从设备协议错误和空闲槽异常统一上报给顶层，但保留独立来源便于定位。
   assign bus_error = (|target_protocol_error) || inactive_master_activity;
 
+  // 纯互联模块只负责译码、仲裁和 ID 路由，不包含具体存储器行为。
   axi4_interconnect_4x4 #(
     .MID_WIDTH(MID_WIDTH), .SID_WIDTH(SID_WIDTH)
   ) u_crossbar (
@@ -167,6 +174,7 @@ module axi4_system_interconnect #(
 
   genvar target;
   generate
+    // 槽 0/1 分别承载主存和 MMIO。两者都通过 AXI4-to-Lite 适配器访问平台从设备。
     for (target = 0; target < 2; target = target + 1) begin : gen_real_target
       logic lite_arvalid;
       logic lite_arready;
@@ -222,6 +230,7 @@ module axi4_system_interconnect #(
         .lite_bresp(lite_bresp), .protocol_error(target_protocol_error[target])
       );
 
+      // 两个地址窗口最终共用 DPI-C 后端，由 C++ 再区分主存和具体 MMIO 地址。
       axi_lite_pmem #(
         .READ_DELAY(READ_DELAY), .WRITE_DELAY(WRITE_DELAY)
       ) u_target (
@@ -235,6 +244,7 @@ module axi4_system_interconnect #(
       );
     end
 
+    // 槽 2 是保留扩展窗口，槽 3 是默认窗口；当前都明确返回错误。
     for (target = 2; target < 4; target = target + 1) begin : gen_error_target
       axi4_error_slave #(.SID_WIDTH(SID_WIDTH)) u_error (
         .clock(clock), .reset(reset),

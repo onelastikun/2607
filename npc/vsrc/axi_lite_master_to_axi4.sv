@@ -1,4 +1,5 @@
-// Adds the AXI4 metadata required by the interconnect to a single-beat Lite master.
+// 将单拍 AXI4-Lite 主设备适配到带 ID 和突发字段的 AXI4 接口。
+// 数据通道直接透传，只补充本项目固定使用的单拍事务元数据。
 module axi_lite_master_to_axi4 #(
   parameter logic [3:0] READ_ID = 4'd0,
   parameter logic [3:0] WRITE_ID = 4'd1
@@ -53,6 +54,7 @@ module axi_lite_master_to_axi4 #(
   output logic        protocol_error
 );
 
+  // 读事务固定为 LEN=0（单拍）、SIZE=2（每拍 4 字节）、INCR 类型。
   assign axi_arvalid = lite_arvalid;
   assign lite_arready = axi_arready;
   assign axi_araddr = lite_araddr;
@@ -65,6 +67,7 @@ module axi_lite_master_to_axi4 #(
   assign lite_rdata = axi_rdata;
   assign lite_rresp = axi_rresp;
 
+  // 写事务同样是单拍；因此 WLAST 恒为 1。
   assign axi_awvalid = lite_awvalid;
   assign lite_awready = axi_awready;
   assign axi_awaddr = lite_awaddr;
@@ -81,7 +84,8 @@ module axi_lite_master_to_axi4 #(
   assign axi_bready = lite_bready;
   assign lite_bresp = axi_bresp;
 
-  // A single-outstanding Lite master knows the expected IDs and final beat.
+  // Lite 主设备一次只有一个事务，因此返回 ID 必须等于固定请求 ID，
+  // 且唯一的读数据拍必须同时带 RLAST。违反这些约束表示互联或从设备出错。
   assign protocol_error =
       (axi_rvalid && (axi_rid != READ_ID || !axi_rlast)) ||
       (axi_bvalid && (axi_bid != WRITE_ID));

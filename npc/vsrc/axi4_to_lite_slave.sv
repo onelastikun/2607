@@ -1,4 +1,5 @@
-// Adapts one single-beat AXI4 target port to an AXI4-Lite slave.
+// 将互联的一路单拍 AXI4 从端口适配到 AXI4-Lite 从设备。
+// 适配器保存请求 ID，Lite 从设备返回响应时再恢复 RID/BID。
 module axi4_to_lite_slave #(
   parameter int SID_WIDTH = 6
 ) (
@@ -54,9 +55,11 @@ module axi4_to_lite_slave #(
   output logic                 protocol_error
 );
 
+  // Lite 没有 ID 字段，因此必须在地址握手时锁存 AXI4 ID。
   logic [SID_WIDTH-1:0] read_id;
   logic [SID_WIDTH-1:0] write_id;
 
+  // 五个 Lite 通道与 AXI4 单拍通道逐一透传，只有 ID/RLAST 由本模块补充。
   assign lite_arvalid = axi_arvalid;
   assign axi_arready = lite_arready;
   assign lite_araddr = axi_araddr;
@@ -79,6 +82,8 @@ module axi4_to_lite_slave #(
   assign axi_bresp = lite_bresp;
   assign axi_bid = write_id;
 
+  // 同时检查本阶段的裁剪约束：只接受 4 字节、INCR、LEN=0 的事务。
+  // protocol_error 为粘滞错误，复位前保持有效，便于顶层可靠捕获。
   always_ff @(posedge clock) begin
     if (reset) begin
       read_id <= '0;

@@ -1,4 +1,5 @@
-// MiniRV core state and commit boundary. Memory timing is provided externally.
+// MiniRV 核心：保存 PC 和寄存器等架构状态，并定义清晰的指令提交边界。
+// 存储器时序由外部总线主设备负责；只有 step=1 时当前指令才真正提交。
 module minirv_core (
   input  logic         clock,
   input  logic         reset,
@@ -24,8 +25,10 @@ module minirv_core (
   output logic [511:0] gpr_state
 );
 
+  // 一生一芯 NPC 的客户程序复位入口。
   localparam logic [31:0] RESET_VECTOR = 32'h8000_0000;
 
+  // pc_reg 是本模块直接保存的核心状态，其余信号由组合译码产生。
   logic [31:0] pc_reg;
   logic [31:0] next_pc;
   logic [31:0] rs1_value;
@@ -37,6 +40,8 @@ module minirv_core (
   logic [3:0]  rs2_idx;
   logic [3:0]  rd_idx;
 
+  // RV32E 只允许 x0~x15，因此这里只取寄存器编号的低 4 位；
+  // 编号最高位是否合法由 minirv_decode 单独检查，不能仅靠截断忽略。
   assign pc = pc_reg;
   assign inst = imem_rdata;
   assign imem_addr = pc_reg;
@@ -45,6 +50,7 @@ module minirv_core (
   assign rd_idx = inst[10:7];
   assign regfile_write = rd_write && step;
 
+  // 寄存器堆负责组合读取和提交时写回。
   minirv_regfile u_regfile (
     .clock(clock),
     .reset(reset),
@@ -59,6 +65,7 @@ module minirv_core (
     .gpr_state(gpr_state)
   );
 
+  // 译码器是纯组合模块，根据当前指令计算下一 PC、写回值和访存请求。
   minirv_decode u_decode (
     .pc(pc_reg),
     .inst(inst),
@@ -78,6 +85,8 @@ module minirv_core (
     .illegal(illegal)
   );
 
+  // step 是唯一提交使能：等待取指、load 或 store 响应时，PC 和寄存器均不前进。
+  // commit_* 锁存“刚刚完成”的指令，供 itrace 和 DiffTest 在同一边界观察。
   always_ff @(posedge clock) begin
     if (reset) begin
       pc_reg <= RESET_VECTOR;

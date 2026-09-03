@@ -1,9 +1,11 @@
-// Active-high hexadecimal seven-segment decoder; bit 7 is the decimal point.
+// 十六进制七段数码管译码器。
+// segments[6:0] 对应七个笔段，segments[7] 为小数点；当前小数点始终关闭。
 module hex7seg (
   input  logic [3:0] value,
   output logic [7:0] segments
 );
 
+  // 组合查找表把 4 位十六进制数转换为段码，不保存任何状态。
   always_comb begin
     case (value)
       4'h0: segments = 8'b0_0111111;

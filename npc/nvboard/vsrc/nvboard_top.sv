@@ -1,4 +1,5 @@
-// NVBoard wrapper. SW0 selects PC (0) or x1 (1) for LEDs and displays.
+// MiniRV 的 NVBoard 平台顶层：连接核心、演示存储器、开关、LED 和数码管。
+// 板级演示直接让核心每拍 step，不包含仿真环境中的 AXI 总线和 DPI-C。
 module nvboard_top (
   input  logic        clock,
   input  logic        reset,
@@ -35,6 +36,7 @@ module nvboard_top (
   logic [511:0] gpr_state;
   logic [31:0] display_value;
 
+  // 板级核心复用 NPC 已验证的数据通路和寄存器堆。
   minirv_core u_core (
     .clock(clock), .reset(reset), .step(1'b1),
     .imem_addr(imem_addr), .imem_rdata(imem_rdata),
@@ -47,6 +49,7 @@ module nvboard_top (
     .commit_inst(commit_inst), .gpr_state(gpr_state)
   );
 
+  // 演示存储器内置递增程序，无需从宿主机加载镜像。
   nvboard_memory u_memory (
     .clock(clock), .imem_addr(imem_addr), .imem_rdata(imem_rdata),
     .dmem_read(dmem_read), .dmem_addr(dmem_addr), .dmem_rdata(dmem_rdata),
@@ -56,10 +59,10 @@ module nvboard_top (
 
   always_comb begin
     if (sw[15]) begin
-      // Register inspection mode: SW3..SW0 select one of the 16 RV32E GPRs.
+      // 寄存器观察模式：SW3..SW0 选择 x0~x15。
       display_value = gpr_state[sw[3:0] * 32 +: 32];
     end else begin
-      // Diagnostic mode: SW6..SW4 select a core or memory observation point.
+      // 诊断模式：SW6..SW4 选择 PC、指令、提交信息或访存信息。
       case (sw[6:4])
         3'd0: display_value = pc;
         3'd1: display_value = inst;
@@ -77,12 +80,13 @@ module nvboard_top (
     end
   end
 
-  // SW14 provides a direct switch/LED board sanity check.
+  // SW14=1 时绕过 CPU，直接把开关映射到 LED，用于确认板级引脚绑定。
   assign led = sw[14] ? sw
              : illegal ? 16'hdead
              : is_ebreak ? 16'hbeef
              : display_value[15:0];
 
+  // 8 个数码管从低到高分别显示 display_value 的 8 个十六进制数位。
   hex7seg u_seg0(.value(display_value[3:0]),   .segments(seg0));
   hex7seg u_seg1(.value(display_value[7:4]),   .segments(seg1));
   hex7seg u_seg2(.value(display_value[11:8]),  .segments(seg2));
