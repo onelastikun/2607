@@ -25,6 +25,7 @@ class Simulator {
   std::uint32_t gpr(unsigned index) const;
   std::uint32_t pc() const;
   std::uint32_t commit_pc() const;
+  std::uint64_t instruction_count() const;
   bool commit_valid() const;
 
  private:

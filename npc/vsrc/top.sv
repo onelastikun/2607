@@ -2,7 +2,7 @@
 module top (
   input  logic         clock,
   input  logic         reset,
-  output logic [63:0]  cycle_count,
+  output logic [63:0]  instruction_count,
   output logic [31:0]  pc,
   output logic [31:0]  inst,
   output logic         commit_valid,
@@ -99,7 +99,7 @@ module top (
     .dmem_rdata(dmem_rdata), .dmem_write(dmem_write),
     .dmem_wdata(dmem_wdata), .dmem_wmask(dmem_wmask),
     .is_ebreak(is_ebreak), .illegal(illegal), .trap_code(trap_code),
-    .cycle_count(cycle_count), .pc(pc), .inst(inst),
+    .instruction_count(instruction_count), .pc(pc), .inst(inst),
     .commit_valid(commit_valid), .commit_pc(commit_pc),
     .commit_inst(commit_inst), .gpr_state(gpr_state)
   );

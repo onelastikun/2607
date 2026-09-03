@@ -15,7 +15,7 @@ module minirv_core (
   output logic         is_ebreak,
   output logic         illegal,
   output logic [31:0]  trap_code,
-  output logic [63:0]  cycle_count,
+  output logic [63:0]  instruction_count,
   output logic [31:0]  pc,
   output logic [31:0]  inst,
   output logic         commit_valid,
@@ -81,7 +81,7 @@ module minirv_core (
   always_ff @(posedge clock) begin
     if (reset) begin
       pc_reg <= RESET_VECTOR;
-      cycle_count <= 64'd0;
+      instruction_count <= 64'd0;
       commit_valid <= 1'b0;
       commit_pc <= 32'd0;
       commit_inst <= 32'd0;
@@ -89,7 +89,7 @@ module minirv_core (
       commit_valid <= 1'b0;
       if (step) begin
         pc_reg <= next_pc;
-        cycle_count <= cycle_count + 64'd1;
+        instruction_count <= instruction_count + 64'd1;
         commit_valid <= 1'b1;
         commit_pc <= pc_reg;
         commit_inst <= inst;

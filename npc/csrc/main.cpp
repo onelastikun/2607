@@ -53,11 +53,13 @@ int main(int argc, char **argv) {
       state.aborted = true;
     }
     if (state.aborted) {
-      std::cerr << "ABORT after " << executed << " cycles\n";
+      std::cerr << "ABORT after " << executed << " cycles, "
+                << simulator.instruction_count() << " instructions\n";
       return EXIT_FAILURE;
     }
     if (!state.halted) {
-      std::cerr << "TIMEOUT after " << executed << " cycles at pc=0x"
+      std::cerr << "TIMEOUT after " << executed << " cycles, "
+                << simulator.instruction_count() << " instructions at pc=0x"
                 << std::hex << simulator.pc() << std::dec << '\n';
       return EXIT_FAILURE;
     }
@@ -73,7 +75,8 @@ int main(int argc, char **argv) {
     }
 
     std::cout << "GOOD TRAP at pc=0x" << std::hex << state.pc << std::dec
-              << " after " << executed << " cycles\n";
+              << " after " << executed << " cycles, "
+              << simulator.instruction_count() << " instructions\n";
     return EXIT_SUCCESS;
   } catch (const std::exception &error) {
     std::cerr << "fatal: " << error.what() << '\n';
