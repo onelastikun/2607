@@ -1,3 +1,4 @@
+// NPC C++ 仿真器主流程：加载镜像、驱动 RTL，并汇总退出结果。
 #include <verilated.h>
 
 #include <cstdlib>
@@ -13,11 +14,13 @@
 #include "simulator.h"
 #include "types.h"
 
+// 仿真器入口只编排对象生命周期和运行状态；具体功能由各模块负责。
 int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
   const npc::Options options = npc::parse_options(argc, argv);
 
   try {
+    // 这些对象的生命周期覆盖整个仿真，因此 DPI-C 保存其地址是安全的。
     npc::Memory memory;
     npc::DeviceMap devices;
     npc::RunState state;
@@ -29,6 +32,7 @@ int main(int argc, char **argv) {
 
     npc::Simulator simulator(options);
     simulator.reset();
+    // 复位完成后才启用边界检查，避免 Verilator 初始化组合逻辑时产生误报。
     memory.enable_checks();
 
     std::unique_ptr<npc::Difftest> difftest;
@@ -37,11 +41,13 @@ int main(int argc, char **argv) {
           std::make_unique<npc::Difftest>(options.diff_path, memory, image_size);
     }
 
+    // executed 统计总线时钟周期；instruction_count 则由 RTL 统计提交指令数。
     std::uint64_t executed = 0;
     while (!state.halted && !state.aborted && !memory.faulted() &&
            executed < options.max_cycles) {
       simulator.tick();
       ++executed;
+      // DiffTest 必须严格对齐“指令提交”边界，等待总线时不能推进参考模型。
       if (simulator.commit_valid()) {
         if (options.itrace) simulator.print_commit();
         if (difftest && !difftest->step(simulator)) state.aborted = true;

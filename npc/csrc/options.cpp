@@ -1,3 +1,4 @@
+// NPC 命令行解析：只负责把字符串参数转换为 Options。
 #include "options.h"
 
 #include <cstdlib>
@@ -7,6 +8,7 @@
 namespace npc {
 namespace {
 
+// 所有参数错误统一走这里，避免调用者继续使用不完整配置。
 [[noreturn]] void usage(const char *program, const char *message = nullptr) {
   if (message != nullptr) std::cerr << "error: " << message << '\n';
   std::cerr << "usage: " << program
@@ -15,6 +17,7 @@ namespace {
   std::exit(EXIT_FAILURE);
 }
 
+// strtoull 支持十进制和 0x 前缀；end 用于确认整个字符串都被解析。
 std::uint64_t parse_u64(const char *text, const char *program) {
   char *end = nullptr;
   const auto value = std::strtoull(text, &end, 0);
@@ -24,8 +27,9 @@ std::uint64_t parse_u64(const char *text, const char *program) {
   return value;
 }
 
-}  // namespace
+}  // 匿名命名空间
 
+// 参数保持简单的“开关或开关+一个值”形式，不引入额外解析框架。
 Options parse_options(int argc, char **argv) {
   Options options;
   for (int i = 1; i < argc; ++i) {
@@ -51,4 +55,4 @@ Options parse_options(int argc, char **argv) {
   return options;
 }
 
-}  // namespace npc
+}  // 命名空间 npc

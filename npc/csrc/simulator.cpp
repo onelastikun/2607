@@ -1,3 +1,4 @@
+// 对 Verilator DUT 的生命周期、时钟、波形和提交历史进行封装。
 #include "simulator.h"
 
 #include <verilated.h>
@@ -11,9 +12,11 @@
 
 namespace npc {
 
+// VerilatedContext 保存仿真时间；Vtop 是 Verilator 生成的 RTL 顶层对象。
 Simulator::Simulator(const Options &options)
     : context_(std::make_unique<VerilatedContext>()),
       dut_(std::make_unique<Vtop>(context_.get())) {
+  // 只有显式指定 --wave 时才创建 VCD，避免正常回归产生巨大波形文件。
   if (!options.wave_path.empty()) {
     context_->traceEverOn(true);
     trace_ = std::make_unique<VerilatedVcdC>();
@@ -27,6 +30,7 @@ Simulator::~Simulator() {
   if (trace_) trace_->close();
 }
 
+// 顶层采用同步复位，因此复位有效时仍需提供时钟上升沿。
 void Simulator::reset() {
   dut_->reset = 1;
   tick();
@@ -40,6 +44,7 @@ void Simulator::tick() {
   record_commit();
 }
 
+// 每次电平变化后先求值，再记录波形，最后推进 Verilator 时间戳。
 void Simulator::half_cycle(std::uint8_t clock) {
   dut_->clock = clock;
   dut_->eval();
@@ -47,6 +52,7 @@ void Simulator::half_cycle(std::uint8_t clock) {
   context_->timeInc(1);
 }
 
+// 固定深度环形历史只保留调试所需信息，不随长程序无限增长。
 void Simulator::record_commit() {
   if (!dut_->commit_valid) return;
   constexpr std::size_t kTraceDepth = 16;
@@ -83,4 +89,4 @@ std::uint64_t Simulator::instruction_count() const {
 }
 bool Simulator::commit_valid() const { return dut_->commit_valid; }
 
-}  // namespace npc
+}  // 命名空间 npc

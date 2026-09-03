@@ -1,3 +1,4 @@
+// AXI4 4x4 互联的定向测试：直接驱动各通道，检查译码、仲裁和 ID 路由。
 #include <verilated.h>
 
 #include <cstdint>
@@ -8,11 +9,13 @@
 
 namespace {
 
+// 只求值组合逻辑，不产生时钟沿，适合检查当前拍的 ready/valid 路由。
 void eval(Vaxi4_interconnect_4x4 &dut) {
   dut.clock = 0;
   dut.eval();
 }
 
+// 产生一个完整时钟周期，使互联锁存 AW 目标等时序状态。
 void tick(Vaxi4_interconnect_4x4 &dut) {
   dut.clock = 0;
   dut.eval();
@@ -25,7 +28,7 @@ bool expect(bool condition, const char *message) {
   return condition;
 }
 
-}  // namespace
+}  // 匿名命名空间
 
 int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
@@ -36,7 +39,7 @@ int main(int argc, char **argv) {
 
   bool pass = true;
 
-  // Master 2 reads MMIO (target 1); the extended ID is {2'b10, 4'h5}.
+  // 主设备 2 读取 MMIO（从设备 1）；扩展 ID 应为 {2'b10, 4'h5}。
   dut.m_arvalid = 1u << 2;
   dut.m_araddr[2] = 0xa0000048u;
   dut.m_arid = 5u << (2 * 4);
@@ -51,7 +54,7 @@ int main(int argc, char **argv) {
                  "read ID extension");
   pass &= expect(dut.m_arready == (1u << 2), "read ready routing");
 
-  // Route the slave response back to the original master and original ID.
+  // 根据扩展 ID 将从设备响应送回原主设备，并恢复原始 ID。
   dut.m_arvalid = 0;
   dut.s_arready = 0;
   dut.s_rvalid = 1u << 1;
@@ -65,7 +68,7 @@ int main(int argc, char **argv) {
   pass &= expect(((dut.m_rid >> 8) & 0xfu) == 5u, "read ID restoration");
   pass &= expect(dut.s_rready == (1u << 1), "read response ready routing");
 
-  // Two masters contend for memory; fixed priority grants master 0.
+  // 两个主设备同时访问主存时，固定优先级应授予主设备 0。
   dut.s_rvalid = 0;
   dut.m_rready = 0;
   dut.m_arvalid = (1u << 0) | (1u << 1);
@@ -75,7 +78,7 @@ int main(int argc, char **argv) {
   eval(dut);
   pass &= expect(dut.m_arready == (1u << 0), "read arbitration priority");
 
-  // W must not move before an AW handshake records its target.
+  // AW 尚未握手、写目标尚未记录时，W 通道不得自行前进。
   dut.m_arvalid = 0;
   dut.s_arready = 0;
   dut.m_wvalid = 1u << 3;
@@ -83,7 +86,7 @@ int main(int argc, char **argv) {
   eval(dut);
   pass &= expect(dut.m_wready == 0, "write data waits for address route");
 
-  // Master 3 writes target 2 with ID 7.
+  // 主设备 3 使用 ID 7 写从设备 2，随后检查 W 和 B 通道路由。
   dut.m_wvalid = 0;
   dut.m_awvalid = 1u << 3;
   dut.m_awaddr[3] = 0xc0000010u;
