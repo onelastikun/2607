@@ -77,8 +77,11 @@ test-diff: $(BIN) $(DIRECTED_BIN)
 
 
 test-bus-error: $(BIN) $(BUS_ERROR_BIN)
-	@set +e; $(BIN) --image $(BUS_ERROR_BIN) --max-cycles 100; status=$$?; \
-		set -e; test $$status -ne 0
+	@set +e; output=`$(BIN) --image $(BUS_ERROR_BIN) --max-cycles 100 2>&1`; \
+		status=$$?; set -e; printf '%s\n' "$$output"; \
+		test $$status -ne 0; \
+		printf '%s\n' "$$output" | grep -q \
+		  'bus response error before pc=0x80000004 cause=0x1'
 
 sim:
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!

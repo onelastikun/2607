@@ -20,7 +20,8 @@ module top (
     input int unsigned abort_inst
   );
   import "DPI-C" function void npc_bus_error(
-    input int unsigned fault_pc
+    input int unsigned fault_pc,
+    input int unsigned cause
   );
 
   logic        core_step;
@@ -155,7 +156,8 @@ module top (
 
   always_ff @(posedge clock) begin
     if (!reset && core_step) begin
-      if (bus_error) npc_bus_error(pc);
+      if (bus_error) npc_bus_error(pc,
+          {29'd0, fabric_error, master_protocol_error, lite_bus_error});
       else if (illegal) npc_abort(pc, inst);
       if (is_ebreak && !bus_error) npc_ebreak(pc, trap_code);
     end

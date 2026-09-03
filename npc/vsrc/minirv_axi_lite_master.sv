@@ -49,12 +49,20 @@ module minirv_axi_lite_master (
   logic fetch_response;
   logic load_response;
   logic store_response;
+  logic response_error;
+  logic bus_error_latched;
 
   assign aw_handshake = awvalid && awready;
   assign w_handshake = wvalid && wready;
   assign fetch_response = (state == FETCH_DATA) && rvalid && rready;
   assign load_response = (state == LOAD_DATA) && rvalid && rready;
   assign store_response = (state == STORE_RESP) && bvalid && bready;
+  assign response_error = ((fetch_response || load_response) &&
+                           (rresp != 2'b00)) ||
+                          (store_response && (bresp != 2'b00));
+  // Present the current response error before the clock edge so the runtime
+  // reports the instruction that issued the failing transaction, not the next one.
+  assign bus_error = bus_error_latched || response_error;
 
   // During a fetch response the decoder sees bus data immediately. Memory
   // instructions are then held in inst_reg until their data transaction ends.
@@ -96,16 +104,16 @@ module minirv_axi_lite_master (
       inst_reg <= 32'h0000_0013;
       aw_done <= 1'b0;
       w_done <= 1'b0;
-      bus_error <= 1'b0;
+      bus_error_latched <= 1'b0;
     end else begin
+      if (response_error) bus_error_latched <= 1'b1;
       case (state)
         FETCH_ADDR: if (arvalid && arready) state <= FETCH_DATA;
         FETCH_DATA: if (fetch_response) begin
           inst_reg <= rdata;
-          bus_error <= bus_error || (rresp != 2'b00);
           if (core_dmem_read) begin
             if ((core_dmem_len != 3'd1) && (core_dmem_len != 3'd2) &&
-                (core_dmem_len != 3'd4)) bus_error <= 1'b1;
+                (core_dmem_len != 3'd4)) bus_error_latched <= 1'b1;
             state <= LOAD_ADDR;
           end else if (core_dmem_write) begin
             aw_done <= 1'b0;
@@ -115,7 +123,6 @@ module minirv_axi_lite_master (
         end
         LOAD_ADDR: if (arvalid && arready) state <= LOAD_DATA;
         LOAD_DATA: if (load_response) begin
-          bus_error <= bus_error || (rresp != 2'b00);
           state <= FETCH_ADDR;
         end
         STORE_SEND: begin
@@ -126,7 +133,6 @@ module minirv_axi_lite_master (
           end
         end
         STORE_RESP: if (store_response) begin
-          bus_error <= bus_error || (bresp != 2'b00);
           state <= FETCH_ADDR;
         end
         default: state <= FETCH_ADDR;
