@@ -1,5 +1,8 @@
-// NPC simulation top using an AXI4-Lite master and delayed memory/MMIO slave.
-module top (
+// NPC simulation top using an AXI4-Lite master and configurable-latency targets.
+module top #(
+  parameter int BUS_READ_DELAY = 0,
+  parameter int BUS_WRITE_DELAY = 0
+) (
   input  logic         clock,
   input  logic         reset,
   output logic [63:0]  instruction_count,
@@ -140,7 +143,9 @@ module top (
     .protocol_error(master_protocol_error)
   );
 
-  axi4_system_interconnect u_system_interconnect (
+  axi4_system_interconnect #(
+    .READ_DELAY(BUS_READ_DELAY), .WRITE_DELAY(BUS_WRITE_DELAY)
+  ) u_system_interconnect (
     .clock(clock), .reset(reset),
     .arvalid(axi_arvalid), .arready(axi_arready), .araddr(axi_araddr),
     .arid(axi_arid), .arlen(axi_arlen), .arsize(axi_arsize),

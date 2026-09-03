@@ -1,6 +1,9 @@
 // NPC system fabric: one active CPU master connected through the reusable 4x4
 // interconnect to main memory, MMIO, and two default/error targets.
-module axi4_system_interconnect (
+module axi4_system_interconnect #(
+  parameter int READ_DELAY = 0,
+  parameter int WRITE_DELAY = 0
+) (
   input  logic        clock,
   input  logic        reset,
   input  logic        arvalid,
@@ -219,7 +222,9 @@ module axi4_system_interconnect (
         .lite_bresp(lite_bresp), .protocol_error(target_protocol_error[target])
       );
 
-      axi_lite_pmem #(.READ_DELAY(0), .WRITE_DELAY(0)) u_target (
+      axi_lite_pmem #(
+        .READ_DELAY(READ_DELAY), .WRITE_DELAY(WRITE_DELAY)
+      ) u_target (
         .clock(clock), .reset(reset),
         .arvalid(lite_arvalid), .arready(lite_arready), .araddr(lite_araddr),
         .rvalid(lite_rvalid), .rready(lite_rready), .rdata(lite_rdata),

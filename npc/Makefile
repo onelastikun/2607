@@ -1,7 +1,9 @@
 TOPNAME       := top
 BUILD_DIR     := $(abspath build)
 OBJ_DIR       := $(BUILD_DIR)/obj_dir
+DELAY_OBJ_DIR := $(BUILD_DIR)/delay_obj_dir
 BIN           := $(OBJ_DIR)/V$(TOPNAME)
+DELAY_BIN     := $(DELAY_OBJ_DIR)/V$(TOPNAME)
 DIRECTED_ELF  := $(BUILD_DIR)/rv32e-directed.elf
 DIRECTED_BIN  := $(BUILD_DIR)/rv32e-directed.bin
 BUS_ERROR_ELF := $(BUILD_DIR)/bus-error.elf
@@ -20,12 +22,12 @@ NEMU_REF      ?= $(abspath ../nemu/build/riscv32-nemu-interpreter-so)
 VSRCS         := $(shell find $(abspath vsrc) -type f \( -name '*.v' -o -name '*.sv' \) | sort)
 CSRCS         := $(shell find $(abspath csrc) -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' \) | sort)
 
-VERILATOR_FLAGS := --cc --exe --build --trace \
-                   --top-module $(TOPNAME) \
-                   --Mdir $(OBJ_DIR) \
-                   -Wall -Wno-DECLFILENAME \
-                   -CFLAGS "-std=c++17 -O2 -Wall -Wextra -I$(abspath csrc/include)" \
-                   -LDFLAGS "-ldl"
+VERILATOR_BASE_FLAGS := --cc --exe --build --trace \
+                        --top-module $(TOPNAME) \
+                        -Wall -Wno-DECLFILENAME \
+                        -CFLAGS "-std=c++17 -O2 -Wall -Wextra -I$(abspath csrc/include)" \
+                        -LDFLAGS "-ldl"
+VERILATOR_FLAGS := $(VERILATOR_BASE_FLAGS) --Mdir $(OBJ_DIR)
 
 RUN_ARGS      := --max-cycles $(MAX_CYCLES)
 ifneq ($(strip $(IMG)),)
@@ -46,6 +48,11 @@ all: $(BIN)
 $(BIN): $(VSRCS) $(CSRCS) Makefile
 	@mkdir -p $(BUILD_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) $(VSRCS) $(CSRCS)
+
+$(DELAY_BIN): $(VSRCS) $(CSRCS) Makefile
+	@mkdir -p $(BUILD_DIR)
+	$(VERILATOR) $(VERILATOR_BASE_FLAGS) --Mdir $(DELAY_OBJ_DIR) \
+		-GBUS_READ_DELAY=2 -GBUS_WRITE_DELAY=3 $(VSRCS) $(CSRCS)
 
 run: $(BIN)
 	$(BIN) $(RUN_ARGS)
@@ -76,6 +83,10 @@ test-diff: $(BIN) $(DIRECTED_BIN)
 	$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 --diff $(NEMU_REF) 		$(if $(filter-out 0,$(ITRACE)),--itrace)
 
 
+test-delayed: $(DELAY_BIN) $(DIRECTED_BIN)
+	@test -f $(NEMU_REF) || { echo "missing NEMU reference: $(NEMU_REF)"; exit 1; }
+	$(DELAY_BIN) --image $(DIRECTED_BIN) --max-cycles 2000 --diff $(NEMU_REF)
+
 test-itrace: $(BIN) $(DIRECTED_BIN)
 	@output=`$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 --itrace`; \
 		status=$$?; printf '%s\n' "$$output"; test $$status -eq 0; \
@@ -97,6 +108,6 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-rv32e test-diff test-itrace test-bus-error sim clean
+.PHONY: all run test-rv32e test-diff test-delayed test-itrace test-bus-error sim clean
 
 include ../Makefile
