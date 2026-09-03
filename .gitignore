@@ -18,3 +18,4 @@
 /nvboard
 !.envrc
 /riscv-tests
+/riscv-arch-test

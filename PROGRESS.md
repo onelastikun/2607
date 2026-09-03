@@ -1,10 +1,10 @@
 # E 阶段进度记录
 
-更新日期：2026-09-02
+更新日期：2026-09-03
 
 ## 当前阶段
 
-E7：NPC 已实际经过 4x4 AXI 互联访问主存和 MMIO，并通过现有回归；RV32I 官方测试已接入并通过。
+E7：NPC 已实际经过 4x4 AXI 互联访问主存和 MMIO，并通过现有回归；RV32I 与 RV32E 官方架构测试均已接入并通过，正在进行最终全量回归和完成度审计。
 
 ## 已完成
 
@@ -288,9 +288,47 @@ make -C riscv-tests ARCH=minirv-npc TEST_ISA=i \
 
 环境情况：
 
-- `riscv-tests` 已通过 GitHub codeload 归档获取到当前工作区，但作为外部测试依赖不纳入根仓库提交；
-- `riscv-arch-test-am` 和 `archbench` 仍需网络下载，未以本地已有结果冒充通过。
+- `riscv-tests` 已通过 GitHub codeload 归档获取到当前工作区，但作为外部测试依赖不纳入根仓库提交。
+
+## 官方 RV32E 架构测试
+
+已完成：
+
+- 按 `init.sh` 指定来源初始化 `NJU-ProjectN/riscv-arch-test-am` main 分支，当前外部仓库提交为 `7553ed696e6b`；
+- 使用完整的官方 RV32E E 扩展 37 项架构测试，而不是此前网络中断后形成的不完整文件集合；
+- 使用 `ARCH=riscv32e-npc` 编译原始 RV32E 指令；`ARCH=minirv-npc` 会经过 MiniRV 工具链的指令替换层，不能用于验证被替换掉的目标指令；
+- 37 项测试在 NPC 上全部 good trap；
+- 37 项测试启用 NEMU 逐指令 DiffTest 后再次全部通过；
+- `riscv-arch-test/` 作为外部测试依赖由根仓库忽略，不提交其源码、Git 元数据或构建产物。
+
+验证命令：
+
+```bash
+make -C riscv-arch-test clean
+make -C riscv-arch-test ARCH=riscv32e-npc TEST_ISA=E run
+
+make -C riscv-arch-test clean
+make -C riscv-arch-test ARCH=riscv32e-npc TEST_ISA=E \
+  NPC_DIFF="$PWD/nemu/build/riscv32-nemu-interpreter-so" run
+```
+
+结果：`test list [37 item(s)]`，两次运行均全部 `PASS`。
+
+## 总线错误诊断修正
+
+已完成：
+
+- 在 AXI 响应握手当周期组合呈现错误状态，避免粘滞错误到下一条指令才被报告；
+- DPI-C 错误信息分别标出 Lite 响应、主设备协议和系统互联三个来源；
+- `test-bus-error` 同时检查非零退出状态、故障 PC 和错误来源；
+- 非法窗口 load 现在准确报告发起访问的 `0x80000004`，而不是后继指令 `0x80000008`。
+
+验证结果：
+
+- `make -C npc clean && make -C npc test-diff`：通过；
+- `make -C npc test-bus-error`：通过，报告 `pc=0x80000004 cause=0x1`；
+- `make -C npc/tests/axi-crossbar clean && make -C npc/tests/axi-crossbar run`：通过。
 
 ## 下一步
 
-获取并运行 `riscv-arch-test`；完成最终全量回归和完成度审计；不进入“接入 SoC”。
+执行 AM CPU tests、hello、timer、MicroBench、NVBoard、官方测试与总线定向测试的最终全量回归；逐项审计 E 阶段验收要求；不进入“接入 SoC”。
