@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-E7：NPC 已实际经过 4x4 AXI 互联访问主存和 MMIO，并通过现有回归；RV32I 与 RV32E 官方架构测试均已接入并通过，正在进行最终全量回归和完成度审计。
+E7 已完成到“接入 SoC”标题之前：NPC 通过 4x4 AXI 互联访问主存和 MMIO，RV32I/RV32E 官方测试、AM 回归、MicroBench 和 NVBoard 软件接入均已验证。尚未初始化或接入 `ysyxSoC`。
 
 ## 已完成
 
@@ -261,7 +261,7 @@ E7：NPC 已实际经过 4x4 AXI 互联访问主存和 MMIO，并通过现有回
 
 已完成：
 
-- 使用本机官方 fork 的 `riscv-tests` 源码，按 `ARCH=minirv-npc` 接入 AM 构建；
+- 使用本机官方 fork 的 `riscv-tests` 源码，按 `ARCH=riscv32e-npc` 编译并执行原始 RV32E 指令；
 - 通过官方 `TEST_ISA=i` 测试集合运行 38 项 RV32I 整数测试；
 - 排除 `fence_i` 和 `ma_data`：前者当前设计未实现 I-cache fence 语义，后者依赖非对齐/异常环境，不纳入当前 MiniRV 裁剪集合；
 - 所有 38 项均通过，包括算术、逻辑、移位、比较、分支、跳转、加载和存储。
@@ -270,7 +270,7 @@ E7：NPC 已实际经过 4x4 AXI 互联访问主存和 MMIO，并通过现有回
 
 ```bash
 make -C riscv-tests clean
-make -C riscv-tests ARCH=minirv-npc TEST_ISA=i EXCLUDE_TEST='fence_i ma_data' run
+make -C riscv-tests ARCH=riscv32e-npc TEST_ISA=i EXCLUDE_TEST='fence_i ma_data' run
 ```
 
 结果：`test list [38 item(s)]`，全部 `PASS`。
@@ -279,7 +279,7 @@ DiffTest 验证命令：
 
 ```bash
 make -C riscv-tests clean
-make -C riscv-tests ARCH=minirv-npc TEST_ISA=i \
+make -C riscv-tests ARCH=riscv32e-npc TEST_ISA=i \
   EXCLUDE_TEST='fence_i ma_data' \
   NPC_DIFF="$PWD/nemu/build/riscv32-nemu-interpreter-so" run
 ```
@@ -329,6 +329,48 @@ make -C riscv-arch-test ARCH=riscv32e-npc TEST_ISA=E \
 - `make -C npc test-bus-error`：通过，报告 `pc=0x80000004 cause=0x1`；
 - `make -C npc/tests/axi-crossbar clean && make -C npc/tests/axi-crossbar run`：通过。
 
+## 指令轨迹与统计
+
+已完成：
+
+- `itrace` 同时打印提交 PC、机器码、RV32E 助记符和操作数；
+- 仿真器保留最近 16 条提交记录，DiffTest 首个 PC/GPR 不一致时自动输出最近轨迹；
+- 将原先语义不准确的 `cycle_count` 更名为 `instruction_count`；
+- 退出信息明确区分总线仿真周期和客户程序已提交指令数；
+- NVBoard 诊断显示对应更新为“已提交指令数”。
+
+验证结果：
+
+- `make -C npc test-itrace`：通过，自动检查首条 `addi` 和最终 `ebreak` 的反汇编；
+- `make -C npc test-diff`：通过，114 条指令在 381 个总线周期内完成；
+- `make -C npc test-delayed`：通过，在读延迟 2 周期、写延迟 3 周期时以 636 个总线周期完成同一组 114 条 DiffTest，证明 CPU 会等待握手和响应；
+- `make -C npc test-bus-error`：通过，错误退出同时报告周期数和已提交指令数；
+- NPC 与 NVBoard 均在 Verilator/C++ 严格警告选项下干净构建。
+
+## 最终全量回归（2026-09-03）
+
+- NPC 定向 DiffTest：114 条全部通过；
+- 总线错误定向测试：通过，故障 PC 和来源准确；
+- AXI4 4x4 互联独立测试：通过；
+- AM CPU tests：35 项全部通过；
+- AM `hello`：通过，串口输出正确；
+- AM timer smoke：通过，64 位 uptime 单调且超过 1 ms；
+- MicroBench test：10 项全部通过，最近一次为 41531071 个总线周期、8412756 条提交指令；
+- `riscv-tests`：38 项使用 `ARCH=riscv32e-npc` 和 NEMU DiffTest 全部通过；
+- `riscv-arch-test`：37 项使用 `ARCH=riscv32e-npc` 和 NEMU DiffTest 全部通过；
+- NVBoard：干净构建和 `SDL_VIDEODRIVER=dummy` 的 100 周期 smoke 通过；
+- `git diff --check`：通过；
+- `ysyxSoC/`：不存在，未开始 SoC 接入。
+
+## 边界与限制
+
+- 当前 CPU/总线按本阶段要求裁剪为 RV32E、32 位数据宽度、单拍事务和受控单 outstanding；不支持 AXI burst；
+- 单核无 I-cache，`fence` 作为空操作；`fence.i` 未实现并从 `riscv-tests` 中明确排除；
+- `ma_data` 依赖异常环境，不属于当前 MiniRV 裁剪范围；
+- NVBoard 仅完成软件构建与无窗口 smoke，尚无物理 FPGA 板上验证结论；
+- 根 Makefile 的 `STUID/STUNAME` 仍为示例值，因此没有执行会产生错误身份 tracer 提交的 `make sim`；讲义要求的 tracer 调用行保持原样；
+- 未初始化 `ysyxSoC`，未开展 Flash/SPI/PSRAM/UART 16550、综合、STA、PDK 或物理设计工作。
+
 ## 下一步
 
-执行 AM CPU tests、hello、timer、MicroBench、NVBoard、官方测试与总线定向测试的最终全量回归；逐项审计 E 阶段验收要求；不进入“接入 SoC”。
+在 E7“接入 SoC”前停止，等待用户审查和确认后续范围。
