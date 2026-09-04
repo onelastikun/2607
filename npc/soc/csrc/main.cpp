@@ -40,7 +40,10 @@ int main(int argc, char **argv) {
                 << " CPU cycles and " << state.instruction_count
                 << " instructions, last pc=0x" << std::hex << state.last_pc
                 << " inst=0x" << state.last_instruction
-                << ", gpio_out=0x" << simulator.gpio_output() << std::dec << '\n';
+                << ", gpio_out=0x" << simulator.gpio_output()
+                << ", gpio_digits=0x" << simulator.gpio_digits()
+                << ", gpio_changes=" << std::dec << simulator.gpio_change_count()
+                << '\n';
       return EXIT_FAILURE;
     }
     if (state.code != 0) {
@@ -53,7 +56,9 @@ int main(int argc, char **argv) {
               << " after " << simulator.cpu_cycles() << " CPU cycles and "
               << state.instruction_count << " instructions"
               << ", gpio_out=0x" << std::hex << simulator.gpio_output()
-              << std::dec << '\n';
+              << ", gpio_digits=0x" << simulator.gpio_digits()
+              << ", gpio_changes=" << std::dec << simulator.gpio_change_count()
+              << '\n';
     return EXIT_SUCCESS;
   } catch (const std::exception &error) {
     std::cerr << "fatal: " << error.what() << '\n';

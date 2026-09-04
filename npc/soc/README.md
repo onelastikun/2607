@@ -56,3 +56,24 @@ make -C npc/soc test-runtime
 
 该测试检查 `mvendorid`、`marchid`、周期计时、UART 输出和 good trap，不包含耗时
 性能评测。官方 MiniRV hello 的完整启动回归仍可用 `make -C npc/soc test-hello` 手动执行。
+
+## GPIO 寄存器与实验
+
+`vsrc/mygpio_top_apb.sv` 替换 ysyxSoC 中留空的同名教学模块，寄存器遵循讲义：
+
+| 偏移 | 访问 | 功能 |
+| ---: | :---: | --- |
+| `0x0` | 读写 | 低 16 位控制 GPIO/LED 输出 |
+| `0x4` | 只读 | 低 16 位读取 GPIO/拨码输入 |
+| `0x8` | 读写 | 8 个 4 位十六进制数位，并译码到 8 个七段管端口 |
+
+短回归把流水灯、密码锁和申请编号数码管显示合并在一个程序中，并分别检查密码
+正确和错误两种输入：
+
+```bash
+source ../../.envrc
+make -C npc/soc test-gpio
+```
+
+仿真器会输出最终 `gpio_out`、反向解码得到的 `gpio_digits` 和 LED 变化次数，避免
+只检查软件是否 good trap、却遗漏 APB 外设和引脚实际没有变化的问题。

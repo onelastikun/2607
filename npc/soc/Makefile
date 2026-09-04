@@ -6,12 +6,15 @@ WORKBENCH_HOME := $(abspath ../..)
 YSYXSOC_HOME  ?= $(WORKBENCH_HOME)/ysyxSoC
 AM_HOME       ?= $(WORKBENCH_HOME)/abstract-machine
 RUNTIME_TEST  := $(WORKBENCH_HOME)/npc/tests/soc-runtime-smoke
+GPIO_TEST     := $(WORKBENCH_HOME)/npc/tests/soc-gpio-smoke
 VERILATOR     ?= verilator
 export CCACHE_DISABLE ?= 1
 
 SOC_RTL       := $(YSYXSOC_HOME)/ready-to-run/minirv/ElaborateTop.v
-PERIP_VSRCS   := $(shell find $(YSYXSOC_HOME)/perip -type f \
-                  \( -name '*.v' -o -name '*.sv' \) | sort)
+PERIP_VSRCS_ALL := $(shell find $(YSYXSOC_HOME)/perip -type f \
+                      \( -name '*.v' -o -name '*.sv' \) | sort)
+# 官方 GPIO 文件是留给学生实现的空骨架，仿真时用当前仓库的同名 overlay 替换。
+PERIP_VSRCS   := $(filter-out $(YSYXSOC_HOME)/perip/gpio/mygpio_top_apb.v,$(PERIP_VSRCS_ALL))
 CPU_VSRCS     := $(abspath ../vsrc/minirv_regfile.sv) \
                  $(abspath ../vsrc/minirv_decode.sv) \
                  $(abspath ../vsrc/minirv_core.sv) \
@@ -55,6 +58,19 @@ test-runtime: $(BIN)
 		printf '%s\n' "$$output" | grep -q 'SoC CSR/timer smoke passed'; \
 		printf '%s\n' "$$output" | grep -q 'SoC GOOD TRAP'
 
+test-gpio: $(BIN)
+	$(MAKE) -C $(GPIO_TEST) ARCH=riscv32e-ysyxsoc soc-image
+	@accepted=`$(BIN) --image $(GPIO_TEST)/build/soc-gpio-smoke-riscv32e-ysyxsoc.soc.bin \
+		--max-cycles 50000000 --gpio 0x0265`; status=$$?; \
+		printf '%s\n' "$$accepted"; test $$status -eq 0; \
+		printf '%s\n' "$$accepted" | grep -q 'gpio_out=0x600d'; \
+		printf '%s\n' "$$accepted" | grep -q 'gpio_digits=0x25100265'; \
+		rejected=`$(BIN) --image $(GPIO_TEST)/build/soc-gpio-smoke-riscv32e-ysyxsoc.soc.bin \
+		--max-cycles 50000000 --gpio 0`; status=$$?; \
+		printf '%s\n' "$$rejected"; test $$status -eq 0; \
+		printf '%s\n' "$$rejected" | grep -q 'gpio_out=0xdead'; \
+		printf '%s\n' "$$rejected" | grep -q 'gpio_digits=0x25100265'
+
 test-hello: $(BIN)
 	@output=`$(BIN) --image $(YSYXSOC_HOME)/ready-to-run/minirv/hello-minirv-ysyxsoc.bin \
 		--max-cycles 500000000 --gpio 0`; status=$$?; \
@@ -65,4 +81,4 @@ test-hello: $(BIN)
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-runtime test-hello clean
+.PHONY: all run test-runtime test-gpio test-hello clean

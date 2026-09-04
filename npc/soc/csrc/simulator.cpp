@@ -3,6 +3,8 @@
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 
+#include <array>
+
 #include "VSimTop.h"
 
 namespace npc::soc {
@@ -23,6 +25,7 @@ Simulator::Simulator(const Options &options)
     trace_->open(options.wave_path.c_str());
   }
   evaluate();
+  previous_gpio_output_ = gpio_output();
 }
 
 Simulator::~Simulator() {
@@ -44,6 +47,7 @@ void Simulator::step() {
   phase_ = (phase_ + 1u) & 3u;
   if (dut_->cpuClock) ++cpu_cycles_;
   evaluate();
+  observe_gpio();
 }
 
 void Simulator::evaluate() {
@@ -54,6 +58,39 @@ void Simulator::evaluate() {
 
 std::uint16_t Simulator::gpio_output() const {
   return dut_->externalPins_mygpio_out;
+}
+
+void Simulator::observe_gpio() {
+  const auto current = gpio_output();
+  if (current != previous_gpio_output_) {
+    ++gpio_change_count_;
+    previous_gpio_output_ = current;
+  }
+}
+
+std::uint32_t Simulator::gpio_digits() const {
+  // 与 RTL 使用同一组十六进制段码，反向解码便于自动回归检查最终显示值。
+  static constexpr std::array<std::uint8_t, 16> kSegments = {
+      0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07,
+      0x7f, 0x6f, 0x77, 0x7c, 0x39, 0x5e, 0x79, 0x71};
+  const std::array<std::uint8_t, 8> actual = {
+      dut_->externalPins_mygpio_seg_0, dut_->externalPins_mygpio_seg_1,
+      dut_->externalPins_mygpio_seg_2, dut_->externalPins_mygpio_seg_3,
+      dut_->externalPins_mygpio_seg_4, dut_->externalPins_mygpio_seg_5,
+      dut_->externalPins_mygpio_seg_6, dut_->externalPins_mygpio_seg_7};
+
+  std::uint32_t result = 0;
+  for (std::size_t position = 0; position < actual.size(); ++position) {
+    std::uint32_t digit = 0xf;
+    for (std::size_t candidate = 0; candidate < kSegments.size(); ++candidate) {
+      if (actual[position] == kSegments[candidate]) {
+        digit = static_cast<std::uint32_t>(candidate);
+        break;
+      }
+    }
+    result |= digit << (position * 4u);
+  }
+  return result;
 }
 
 }  // 命名空间 npc::soc
