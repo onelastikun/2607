@@ -20,3 +20,5 @@
 /riscv-tests
 /riscv-arch-test
 /ysyxSoC
+
+!SOC_AND_TAPEOUT_GUIDE.md

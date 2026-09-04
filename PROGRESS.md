@@ -1,10 +1,10 @@
 # E 阶段进度记录
 
-更新日期：2026-09-03
+更新日期：2026-09-04
 
 ## 当前阶段
 
-E7 已完成到“接入 SoC”标题之前：NPC 通过 4x4 AXI 互联访问主存和 MMIO，RV32I/RV32E 官方测试、AM 回归、MicroBench 和 NVBoard 软件接入均已验证。尚未初始化或接入 `ysyxSoC`。
+E7 功能阶段已完成：在原有 NPC/AXI 验证基础上，MiniRV 已接入 ysyxSoC，完成 SPI Flash 启动、PSRAM 搬运、UART、CSR/周期计时、GPIO 和 NVBoard 软件接入。按用户要求跳过耗时 SoC 性能评测；E8 只整理准备清单，未实际执行。
 
 ## 已完成
 
@@ -347,7 +347,7 @@ make -C riscv-arch-test ARCH=riscv32e-npc TEST_ISA=E \
 - `make -C npc test-bus-error`：通过，错误退出同时报告周期数和已提交指令数；
 - NPC 与 NVBoard 均在 Verilator/C++ 严格警告选项下干净构建。
 
-## 最终全量回归（2026-09-03）
+## 接入 SoC 前全量回归（2026-09-03）
 
 - NPC 定向 DiffTest：114 条全部通过；
 - 总线错误定向测试：通过，故障 PC 和来源准确；
@@ -360,17 +360,55 @@ make -C riscv-arch-test ARCH=riscv32e-npc TEST_ISA=E \
 - `riscv-arch-test`：37 项使用 `ARCH=riscv32e-npc` 和 NEMU DiffTest 全部通过；
 - NVBoard：干净构建和 `SDL_VIDEODRIVER=dummy` 的 100 周期 smoke 通过；
 - `git diff --check`：通过；
-- `ysyxSoC/`：不存在，未开始 SoC 接入。
+- 该检查点尚未接入 SoC；后续 SoC 完成情况见下节。
 
 ## 边界与限制
 
 - 当前 CPU/总线按本阶段要求裁剪为 RV32E、32 位数据宽度、单拍事务和受控单 outstanding；不支持 AXI burst；
 - 单核无 I-cache，`fence` 作为空操作；`fence.i` 未实现并从 `riscv-tests` 中明确排除；
 - `ma_data` 依赖异常环境，不属于当前 MiniRV 裁剪范围；
-- NVBoard 仅完成软件构建与无窗口 smoke，尚无物理 FPGA 板上验证结论；
-- 根 Makefile 的 `STUID/STUNAME` 仍为示例值，因此没有执行会产生错误身份 tracer 提交的 `make sim`；讲义要求的 tracer 调用行保持原样；
-- 未初始化 `ysyxSoC`，未开展 Flash/SPI/PSRAM/UART 16550、综合、STA、PDK 或物理设计工作。
+- NPC 和 SoC 的 NVBoard 均完成软件构建与无窗口回归，尚无物理 FPGA 板上验证结论；
+- 根 Makefile 的 `STUID/STUNAME` 已由用户在工作区填写但尚未提交；本次阶段提交刻意未包含用户修改，讲义要求的 tracer 调用行保持原样；
+- 已开展 ysyxSoC 功能仿真；综合、STA、PDK、DFT、物理设计和流片仍未执行。
+
+## E7 ysyxSoC 接入（2026-09-04）
+
+已完成：
+
+- 初始化官方 `ysyxSoC` 2607 分支，并以 `SimTop` 完成 Verilator 行为级仿真；
+- 新增正式顶层 `ysyx_25100265` 和 SimpleBus 取指/访存适配器；
+- CPU 从 `0x30000000` SPI XIP 启动，bootloader 可把 ELF 段搬到 `0x80000000` PSRAM；
+- 实现只读 `mvendorid=0x79737978`、`marchid=25100265`、`mcycle/mcycleh`；
+- 新增 `minirv-ysyxsoc` 与 `riscv32e-ysyxsoc` AM 架构和 Flash ELF 打包流程；
+- 完成 UART 16550 初始化、轮询输出和 good/bad trap；
+- AM uptime 使用 64 位 mcycle 并按 3.6864 MHz 换算；
+- 实现 GPIO APB 寄存器、流水灯、密码锁和 8 位十六进制数码管；
+- SoC NVBoard 连接 16 位开关/LED、8 个数码管和 UART；
+- 使用 `SYNTHESIS` 宏隔离 CPU 顶层 DPI，并通过纯综合视角的 Verilator lint。
+
+验证结果：
+
+- 官方 `hello-minirv-ysyxsoc.bin`：从 Flash/PSRAM 启动并输出 Hello，good trap；
+- 自建 `riscv32e-ysyxsoc` hello：7404228 CPU 周期 good trap；
+- `make -C npc/soc test-runtime`：CSR、UART、mcycle、AM uptime 和 good trap 通过；
+- `make -C npc/soc test-gpio`：密码正确输出 `0x600d`、错误输出 `0xdead`，数码管为 `0x25100265`，两次均观察到 17 次 LED 变化；
+- `make -C npc/soc/nvboard smoke`：SDL dummy 100 周期启动通过；
+- `make -C npc/soc/nvboard test-gpio`：完整 Flash/PSRAM/GPIO/NVBoard 联合回归 good trap；
+- `verilator --lint-only -DSYNTHESIS ... --top-module ysyx_25100265`：通过；
+- 原 NPC `make -C npc test-diff`：114 条指令继续与 NEMU 一致。
+
+## 按用户要求跳过的项目
+
+- SoC MicroBench 长时间性能评测；
+- archbench 长跑；
+- 多时钟频率扫描、IPC 对比和性能优化评测；
+- 真实 FPGA 板上测试（当前没有物理板验证条件）。
+
+跳过项不会改变功能回归结论，但当前不能声明 SoC 性能达标或 FPGA 实测通过。
 
 ## 下一步
 
-在 E7“接入 SoC”前停止，等待用户审查和确认后续范围。
+- 用户审查 `SOC_AND_TAPEOUT_GUIDE.md`，并结合 `npc/README.md` 理解 C++/RTL；
+- 有板卡后补做 UART、流水灯、密码锁和数码管的真实 FPGA 验证；
+- 正式流片前把 GPIO overlay 纳入提交分支的综合 file list，并按当期讲义重跑验收；
+- E8 的综合、STA、PPA、DFT/ATPG、布局布线和签核仅已总结，尚未执行。
