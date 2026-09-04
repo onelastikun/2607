@@ -1,7 +1,11 @@
 // MiniRV/RV32E 的组合译码与执行数据通路。
 // 本模块不保存时序状态：输入变化后立即计算控制信号、写回值和下一 PC。
-module minirv_decode (
+module minirv_decode #(
+  parameter logic [31:0] MVENDORID = 32'h7973_7978,
+  parameter logic [31:0] MARCHID = 32'd0
+) (
   input  logic [31:0] pc,
+  input  logic [63:0] cycle_count,
   input  logic [31:0] inst,
   input  logic [31:0] rs1_value,
   input  logic [31:0] rs2_value,
@@ -30,6 +34,8 @@ module minirv_decode (
   logic [31:0] imm_u;
   logic [31:0] imm_j;
   logic branch_taken;
+  logic csr_read_valid;
+  logic [31:0] csr_read_value;
 
   always_comb begin
     // 先完成寄存器合法性和 I/S/B/U/J 五类立即数生成。
@@ -57,6 +63,19 @@ module minirv_decode (
     is_ebreak = 1'b0;
     illegal = 1'b0;
     branch_taken = 1'b0;
+    csr_read_valid = 1'b1;
+    case (inst[31:20])
+      12'hf11: csr_read_value = MVENDORID;       // mvendorid：ASCII "ysyx"
+      12'hf12: csr_read_value = MARCHID;         // marchid：可配置的申请编号
+      12'hb00: csr_read_value = cycle_count[31:0];  // mcycle 低 32 位
+      12'hb80: csr_read_value = cycle_count[63:32]; // mcycleh 高 32 位
+      12'hc00: csr_read_value = cycle_count[31:0];  // cycle 只读别名
+      12'hc80: csr_read_value = cycle_count[63:32]; // cycleh 只读别名
+      default: begin
+        csr_read_valid = 1'b0;
+        csr_read_value = 32'd0;
+      end
+    endcase
 
     case (inst[6:0])
       7'b0110111: begin  // LUI：加载高位立即数
@@ -179,10 +198,18 @@ module minirv_decode (
       7'b0001111: begin
         if (inst[14:12] != 3'b000) illegal = 1'b1;
       end
-      // 本阶段只实现用来结束仿真的 EBREAK，其他 SYSTEM 编码视为非法。
+      // EBREAK 用于仿真结束；CSRRS rd,csr,x0 用于读取只读 CSR。
       7'b1110011: begin
-        if (inst == 32'h0010_0073) is_ebreak = 1'b1;
-        else illegal = 1'b1;
+        if (inst == 32'h0010_0073) begin
+          is_ebreak = 1'b1;
+        end else if ((inst[14:12] == 3'b010) && (inst[19:15] == 5'd0) &&
+                     !rd_high && csr_read_valid) begin
+          rd_write = 1'b1;
+          rd_value = csr_read_value;
+        end else begin
+          // 当前 CSR 均为只读，任何写操作或未知 CSR 都视为非法指令。
+          illegal = 1'b1;
+        end
       end
       default: illegal = 1'b1;
     endcase

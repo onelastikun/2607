@@ -1,6 +1,10 @@
 // MiniRV 核心：保存 PC 和寄存器等架构状态，并定义清晰的指令提交边界。
 // 存储器时序由外部总线主设备负责；只有 step=1 时当前指令才真正提交。
-module minirv_core (
+module minirv_core #(
+  parameter logic [31:0] RESET_VECTOR = 32'h8000_0000,
+  parameter logic [31:0] MVENDORID = 32'h7973_7978,
+  parameter logic [31:0] MARCHID = 32'd0
+) (
   input  logic         clock,
   input  logic         reset,
   input  logic         step,
@@ -25,11 +29,9 @@ module minirv_core (
   output logic [511:0] gpr_state
 );
 
-  // 一生一芯 NPC 的客户程序复位入口。
-  localparam logic [31:0] RESET_VECTOR = 32'h8000_0000;
-
   // pc_reg 是本模块直接保存的核心状态，其余信号由组合译码产生。
   logic [31:0] pc_reg;
+  logic [63:0] cycle_count;
   logic [31:0] next_pc;
   logic [31:0] rs1_value;
   logic [31:0] rs2_value;
@@ -66,8 +68,10 @@ module minirv_core (
   );
 
   // 译码器是纯组合模块，根据当前指令计算下一 PC、写回值和访存请求。
-  minirv_decode u_decode (
-    .pc(pc_reg),
+  minirv_decode #(
+    .MVENDORID(MVENDORID), .MARCHID(MARCHID)
+  ) u_decode (
+    .pc(pc_reg), .cycle_count(cycle_count),
     .inst(inst),
     .rs1_value(rs1_value),
     .rs2_value(rs2_value),
@@ -90,11 +94,14 @@ module minirv_core (
   always_ff @(posedge clock) begin
     if (reset) begin
       pc_reg <= RESET_VECTOR;
+      cycle_count <= 64'd0;
       instruction_count <= 64'd0;
       commit_valid <= 1'b0;
       commit_pc <= 32'd0;
       commit_inst <= 32'd0;
     end else begin
+      // mcycle 统计核心时钟周期，等待总线的周期也必须计入。
+      cycle_count <= cycle_count + 64'd1;
       commit_valid <= 1'b0;
       if (step) begin
         pc_reg <= next_pc;
