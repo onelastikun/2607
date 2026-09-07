@@ -100,7 +100,7 @@ test-bus-error: $(BIN) $(BUS_ERROR_BIN)
 		status=$$?; set -e; printf '%s\n' "$$output"; \
 		test $$status -ne 0; \
 		printf '%s\n' "$$output" | grep -q \
-		  'bus response error before pc=0x80000004 cause=0x1'
+		  'SimpleBus access error before pc=0x80000004 cause=0x1'
 
 sim:
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!

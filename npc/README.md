@@ -1,114 +1,66 @@
 # NPC 代码导读：面向 C 语言学习者的 C++ 与 RTL 入门
 
-> 更新时间：2026-09-03
-> 适用范围：当前仓库中 E7“接入 SoC”之前的 NPC、MiniRV、DiffTest、Abstract Machine 和简易 AXI 总线代码。
+> 当前正式范围：MiniRV、C++ 仿真器、SimpleBus、DiffTest、Abstract Machine 和 ysyxSoC。
 
-## 1. 阅读目标
+## 1. 整体结构
 
-这份文档假设你已经能够使用 C 语言，但刚开始接触 C++ 和 Verilog/SystemVerilog。阅读后应当能够回答以下问题：
+```text
+AM/MiniRV 程序
+      ↓ 二进制镜像
+C++ 仿真器
+      ↓ DPI-C 只出现在平台从端
+simple_bus_pmem
+      ↕ reqValid / respValid
+minirv_simple_bus_master
+      ↕ 核心取指/访存接口
+minirv_core
+```
 
-1. NPC 仿真器由哪些模块组成？
-2. C++ 的类、对象、引用、构造函数和智能指针在本项目中分别解决什么问题？
-3. C++ 如何驱动 Verilator 生成的硬件模型？
-4. RTL 如何通过 DPI-C 访问 C++ 中的主存和 MMIO 设备？
-5. 一条普通指令、load 指令和 store 指令分别如何执行？
-6. DiffTest 为什么必须在“指令提交”时比较，而不能每个时钟周期都比较？
-7. 出现非法指令、总线错误、DiffTest 不一致或超时时，应当从哪里开始调试？
+CPU 核心不直接调用 C++，也不实现 AXI。NPC 与 ysyxSoC 复用同一个
+`minirv_simple_bus_master.sv`：
 
-本文不会系统讲解整个 C++ 标准，而是只解释当前代码实际使用到的 C++ 特性。
-
----
+- NPC 中连接 `simple_bus_pmem.sv`；
+- SoC 中连接框架提供的 SimpleBus 接口；
+- ysyxSoC 内部如何转换总线不属于 CPU 的实现内容。
 
 ## 2. 建议阅读顺序
 
-如果你第一次接触这套代码，建议按以下顺序阅读：
+1. `csrc/include/types.h`：公共状态；
+2. `csrc/main.cpp`：仿真生命周期；
+3. `csrc/memory.cpp` 和 `device.cpp`：主存与 MMIO；
+4. `csrc/runtime.cpp`：DPI-C 边界；
+5. `csrc/simulator.cpp`：时钟、波形和提交；
+6. `vsrc/minirv_regfile.sv`；
+7. `vsrc/minirv_decode.sv`；
+8. `vsrc/minirv_core.sv`；
+9. `vsrc/soc/minirv_simple_bus_master.sv`；
+10. `vsrc/simple_bus_pmem.sv`；
+11. `vsrc/top.sv`。
 
-1. `npc/csrc/include/types.h`：先了解公共数据结构；
-2. `npc/csrc/main.cpp`：建立仿真器整体流程；
-3. `npc/csrc/memory.cpp`：理解镜像和主存；
-4. `npc/csrc/device.cpp`：理解串口和计时器；
-5. `npc/csrc/runtime.cpp`：理解 DPI-C；
-6. `npc/csrc/simulator.cpp`：理解 C++ 如何驱动 Verilator；
-7. `npc/csrc/difftest.cpp`：理解 NPC 和 NEMU 如何逐指令比较；
-8. `npc/vsrc/top.sv`：从 RTL 顶层观察各模块连接；
-9. `npc/vsrc/minirv_core.sv`、`minirv_decode.sv`、`minirv_regfile.sv`：理解 CPU 数据通路；
-10. `npc/vsrc/minirv_axi_lite_master.sv`：理解 CPU 为什么需要等待总线；
-11. AXI 适配器、互联和从设备模块；
-12. `npc/nvboard/`：最后阅读板级演示适配。
+## 3. 一次访问如何完成
 
-不要一开始就同时阅读所有 AXI 信号。先理解 C++ 主流程和 CPU 核心，再阅读总线会容易很多。
-
----
-
-## 3. 整体结构
-
-### 3.1 软件和硬件的分工
-
-当前 NPC 可以粗略分成三层：
+取指：
 
 ```text
-┌──────────────────────────────────────────────────────────────┐
-│ C++ 仿真环境                                                 │
-│                                                              │
-│ main / options / simulator / memory / device / difftest      │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ Verilator 端口和 DPI-C
-┌──────────────────────────────▼───────────────────────────────┐
-│ RTL 平台与总线                                                │
-│                                                              │
-│ top → AXI4-Lite 主设备 → AXI4 适配器 → 4×4 互联 → 从设备     │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ 指令/数据请求与 step
-┌──────────────────────────────▼───────────────────────────────┐
-│ MiniRV CPU                                                   │
-│                                                              │
-│ minirv_core → minirv_decode + minirv_regfile                 │
-└──────────────────────────────────────────────────────────────┘
+CPU 给出 PC
+→ SimpleBus 主端发出 IFU reqValid
+→ 从端读取主存
+→ 从端返回 IFU respValid 和指令
+→ CPU 提交普通指令或继续发出 LSU 请求
 ```
 
-三层职责分别是：
-
-- **C++ 仿真环境**：加载镜像、保存主存、模拟设备、驱动时钟、生成波形、执行 DiffTest、决定宿主进程退出码；
-- **RTL 平台与总线**：把 CPU 的简单访存请求转换成 AXI 握手事务，并完成地址译码和响应路由；
-- **MiniRV CPU**：实现 RISC-V 架构状态、指令译码、运算、跳转和访存语义。
-
-CPU 核心不知道镜像文件路径，也不会直接调用 C++。这种边界使核心既能连接 NPC 总线，也能被 NVBoard 顶层复用。
-
-### 3.2 一次主存访问的完整路径
+访存：
 
 ```text
-MiniRV 核心
-  │ dmem_addr / dmem_write / dmem_wdata / dmem_wmask
-  ▼
-minirv_axi_lite_master
-  │ AXI4-Lite
-  ▼
-axi_lite_master_to_axi4
-  │ 单拍 AXI4，添加 ID/LEN/SIZE/BURST
-  ▼
-axi4_system_interconnect
-  │ 地址译码、仲裁、ID 路由
-  ▼
-axi4_to_lite_slave
-  │ 再转换为 AXI4-Lite
-  ▼
-axi_lite_pmem
-  │ DPI-C 调用
-  ▼
-pmem_read() / pmem_write()       ← runtime.cpp
-  │
-  ├── 命中 MMIO → DeviceMap       ← device.cpp
-  └── 未命中   → Memory           ← memory.cpp
+译码得到地址和读写类型
+→ LSU reqValid
+→ 从端访问主存/串口/计时器
+→ LSU respValid
+→ CPU 完成写回并提交
 ```
 
-这里最重要的边界是：
-
-- CPU 只产生硬件信号；
-- 总线模块只处理握手和路由；
-- 只有最末端的平台从设备 `axi_lite_pmem` 使用 DPI-C；
-- C++ 再决定该地址属于主存还是设备。
-
----
+`reqValid` 只是发起请求，`respValid` 才表示事务完成。总线增加延迟时，PC 和寄存器
+必须保持不变。
 
 # 第一部分：从 C 语言过渡到本项目使用的 C++
 
@@ -1178,16 +1130,15 @@ CSR 只支持读取，不实现写入。未知 CSR 或写只读 CSR会报告非�
 
 ## 32. 总线模块
 
-NPC 仿真路径使用 AXI4-Lite 主设备和 4x4 AXI 互联，SoC 路径使用 SimpleBus。
-这些模块改变的是存储器访问时序，不扩展 MiniRV 指令集。
+NPC 和 ysyxSoC 都使用 `minirv_simple_bus_master.sv`。NPC 的
+`simple_bus_pmem.sv` 提供主存、串口、计时器和非法地址检查。
 
 关键原则：
 
-- `valid` 在握手前保持；
-- 请求信息等待期间稳定；
-- CPU 等待读数据或写响应后再提交；
-- 串口和计时器通过总线路径访问；
-- 非法地址返回错误响应，不能误访问宿主内存。
+- `reqValid` 发起一次请求；
+- CPU 等待 `respValid` 后再提交；
+- 串口和计时器通过 SimpleBus 访问；
+- 非法地址返回错误，不能误访问宿主内存。
 
 ## 33. SoC 顶层
 
@@ -1287,8 +1238,8 @@ make -C npc/soc/nvboard test-gpio
 | `vsrc/minirv_regfile.sv` | 16 个 MiniRV 寄存器 |
 | `vsrc/minirv_decode.sv` | 8 条 MiniRV 指令、CSR 和 ebreak |
 | `vsrc/minirv_core.sv` | PC、周期和提交状态 |
-| `vsrc/minirv_axi_lite_master.sv` | NPC 总线主设备 |
-| `vsrc/axi4_interconnect_4x4.sv` | AXI 仲裁和响应路由 |
+| `vsrc/soc/minirv_simple_bus_master.sv` | IFU/LSU SimpleBus 主设备 |
+| `vsrc/simple_bus_pmem.sv` | NPC 主存和 MMIO SimpleBus 从端 |
 | `vsrc/soc/minirv_simple_bus_master.sv` | SoC SimpleBus 适配 |
 | `vsrc/soc/ysyx_25100265.sv` | 正式学号顶层 |
 

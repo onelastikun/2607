@@ -1,5 +1,5 @@
-// NPC 仿真顶层：连接 MiniRV 核心、AXI4-Lite 主设备、AXI4 适配器和系统互联。
-// 本模块只做平台连接与 DPI-C 事件上报，不把宿主机逻辑混入 CPU 核心。
+// NPC 仿真顶层：MiniRV 核心通过讲义规定的 SimpleBus 访问主存和 MMIO。
+// 顶层只负责模块连接和仿真事件上报，不在 CPU 核心中直接调用 DPI-C。
 module top #(
   parameter int BUS_READ_DELAY = 0,
   parameter int BUS_WRITE_DELAY = 0
@@ -15,8 +15,6 @@ module top #(
   output logic [511:0] gpr_state
 );
 
-  // 三个 DPI-C 回调分别表示正常结束、非法指令和总线错误。
-  // 回调只记录状态，宿主进程的最终退出由 C++ 主循环统一处理。
   import "DPI-C" function void npc_ebreak(
     input int unsigned trap_pc,
     input int unsigned code
@@ -30,7 +28,6 @@ module top #(
     input int unsigned cause
   );
 
-  // 核心侧接口：core_step 只有在当前指令及其必要访存全部完成时才拉高。
   logic        core_step;
   logic [31:0] core_imem_addr;
   logic [31:0] fetched_inst;
@@ -44,65 +41,21 @@ module top #(
   logic        is_ebreak;
   logic        illegal;
   logic [31:0] trap_code;
+
+  logic        ifu_req_valid;
+  logic [31:0] ifu_addr;
+  logic        ifu_resp_valid;
+  logic [31:0] ifu_rdata;
+  logic        lsu_req_valid;
+  logic [31:0] lsu_addr;
+  logic [1:0]  lsu_size;
+  logic        lsu_wen;
+  logic [31:0] lsu_wdata;
+  logic [3:0]  lsu_wmask;
+  logic        lsu_resp_valid;
+  logic [31:0] lsu_rdata;
   logic        bus_error;
-  logic        lite_bus_error;
-  logic        master_protocol_error;
-  logic        fabric_error;
 
-  // CPU 总线主设备使用的 AXI4-Lite 五通道信号。
-  logic        arvalid;
-  logic        arready;
-  logic [31:0] araddr;
-  logic        rvalid;
-  logic        rready;
-  logic [31:0] rdata;
-  logic [1:0]  rresp;
-  logic        awvalid;
-  logic        awready;
-  logic [31:0] awaddr;
-  logic        wvalid;
-  logic        wready;
-  logic [31:0] wdata;
-  logic [3:0]  wstrb;
-  logic        bvalid;
-  logic        bready;
-  logic [1:0]  bresp;
-
-  // 添加 ID、LEN、SIZE、BURST 等字段后的单拍 AXI4 信号。
-  logic        axi_arvalid;
-  logic        axi_arready;
-  logic [31:0] axi_araddr;
-  logic [3:0]  axi_arid;
-  logic [7:0]  axi_arlen;
-  logic [2:0]  axi_arsize;
-  logic [1:0]  axi_arburst;
-  logic        axi_rvalid;
-  logic        axi_rready;
-  logic [31:0] axi_rdata;
-  logic [1:0]  axi_rresp;
-  logic [3:0]  axi_rid;
-  logic        axi_rlast;
-  logic        axi_awvalid;
-  logic        axi_awready;
-  logic [31:0] axi_awaddr;
-  logic [3:0]  axi_awid;
-  logic [7:0]  axi_awlen;
-  logic [2:0]  axi_awsize;
-  logic [1:0]  axi_awburst;
-  logic        axi_wvalid;
-  logic        axi_wready;
-  logic [31:0] axi_wdata;
-  logic [3:0]  axi_wstrb;
-  logic        axi_wlast;
-  logic        axi_bvalid;
-  logic        axi_bready;
-  logic [1:0]  axi_bresp;
-  logic [3:0]  axi_bid;
-
-  // 保留三类错误来源，DPI-C 日志可直接指出故障层次。
-  assign bus_error = lite_bus_error || master_protocol_error || fabric_error;
-
-  // CPU 核心只看到简单的指令/数据请求，不关心 AXI 时序。
   minirv_core u_core (
     .clock(clock), .reset(reset), .step(core_step),
     .imem_addr(core_imem_addr), .imem_rdata(fetched_inst),
@@ -115,69 +68,41 @@ module top #(
     .commit_inst(commit_inst), .gpr_state(gpr_state)
   );
 
-  // 总线主设备把核心请求转换为握手事务，并在响应完成时产生 core_step。
-  minirv_axi_lite_master u_master (
+  // NPC 与 ysyxSoC 复用同一个 SimpleBus 主设备，避免维护两套 CPU 总线逻辑。
+  minirv_simple_bus_master u_master (
     .clock(clock), .reset(reset), .core_pc(core_imem_addr),
     .core_inst(fetched_inst),
     .core_dmem_read(dmem_read), .core_dmem_len(dmem_len),
     .core_dmem_addr(dmem_addr), .core_dmem_rdata(dmem_rdata),
     .core_dmem_write(dmem_write), .core_dmem_wdata(dmem_wdata),
     .core_dmem_wmask(dmem_wmask), .core_step(core_step),
-    .arvalid(arvalid), .arready(arready), .araddr(araddr),
-    .rvalid(rvalid), .rready(rready), .rdata(rdata), .rresp(rresp),
-    .awvalid(awvalid), .awready(awready), .awaddr(awaddr),
-    .wvalid(wvalid), .wready(wready), .wdata(wdata), .wstrb(wstrb),
-    .bvalid(bvalid), .bready(bready), .bresp(bresp),
-    .bus_error(lite_bus_error)
+    .io_ifu_reqValid(ifu_req_valid), .io_ifu_addr(ifu_addr),
+    .io_ifu_respValid(ifu_resp_valid), .io_ifu_rdata(ifu_rdata),
+    .io_lsu_reqValid(lsu_req_valid), .io_lsu_addr(lsu_addr),
+    .io_lsu_size(lsu_size), .io_lsu_wen(lsu_wen),
+    .io_lsu_wdata(lsu_wdata), .io_lsu_wmask(lsu_wmask),
+    .io_lsu_respValid(lsu_resp_valid), .io_lsu_rdata(lsu_rdata)
   );
 
-  // 适配器为 Lite 请求补齐 AXI4 元数据，以便经过带 ID 的 4x4 互联。
-  axi_lite_master_to_axi4 u_master_adapter (
-    .lite_arvalid(arvalid), .lite_arready(arready), .lite_araddr(araddr),
-    .lite_rvalid(rvalid), .lite_rready(rready), .lite_rdata(rdata),
-    .lite_rresp(rresp), .lite_awvalid(awvalid), .lite_awready(awready),
-    .lite_awaddr(awaddr), .lite_wvalid(wvalid), .lite_wready(wready),
-    .lite_wdata(wdata), .lite_wstrb(wstrb), .lite_bvalid(bvalid),
-    .lite_bready(bready), .lite_bresp(bresp),
-    .axi_arvalid(axi_arvalid), .axi_arready(axi_arready),
-    .axi_araddr(axi_araddr), .axi_arid(axi_arid), .axi_arlen(axi_arlen),
-    .axi_arsize(axi_arsize), .axi_arburst(axi_arburst),
-    .axi_rvalid(axi_rvalid), .axi_rready(axi_rready), .axi_rdata(axi_rdata),
-    .axi_rresp(axi_rresp), .axi_rid(axi_rid), .axi_rlast(axi_rlast),
-    .axi_awvalid(axi_awvalid), .axi_awready(axi_awready),
-    .axi_awaddr(axi_awaddr), .axi_awid(axi_awid), .axi_awlen(axi_awlen),
-    .axi_awsize(axi_awsize), .axi_awburst(axi_awburst),
-    .axi_wvalid(axi_wvalid), .axi_wready(axi_wready), .axi_wdata(axi_wdata),
-    .axi_wstrb(axi_wstrb), .axi_wlast(axi_wlast), .axi_bvalid(axi_bvalid),
-    .axi_bready(axi_bready), .axi_bresp(axi_bresp), .axi_bid(axi_bid),
-    .protocol_error(master_protocol_error)
-  );
-
-  // 系统互联完成地址译码，并把事务送往主存、MMIO 或错误从设备。
-  axi4_system_interconnect #(
+  simple_bus_pmem #(
     .READ_DELAY(BUS_READ_DELAY), .WRITE_DELAY(BUS_WRITE_DELAY)
-  ) u_system_interconnect (
+  ) u_bus_target (
     .clock(clock), .reset(reset),
-    .arvalid(axi_arvalid), .arready(axi_arready), .araddr(axi_araddr),
-    .arid(axi_arid), .arlen(axi_arlen), .arsize(axi_arsize),
-    .arburst(axi_arburst), .rvalid(axi_rvalid), .rready(axi_rready),
-    .rdata(axi_rdata), .rresp(axi_rresp), .rid(axi_rid), .rlast(axi_rlast),
-    .awvalid(axi_awvalid), .awready(axi_awready), .awaddr(axi_awaddr),
-    .awid(axi_awid), .awlen(axi_awlen), .awsize(axi_awsize),
-    .awburst(axi_awburst), .wvalid(axi_wvalid), .wready(axi_wready),
-    .wdata(axi_wdata), .wstrb(axi_wstrb), .wlast(axi_wlast),
-    .bvalid(axi_bvalid), .bready(axi_bready), .bresp(axi_bresp),
-    .bid(axi_bid), .bus_error(fabric_error)
+    .ifu_reqValid(ifu_req_valid), .ifu_addr(ifu_addr),
+    .ifu_respValid(ifu_resp_valid), .ifu_rdata(ifu_rdata),
+    .lsu_reqValid(lsu_req_valid), .lsu_addr(lsu_addr),
+    .lsu_size(lsu_size), .lsu_wen(lsu_wen),
+    .lsu_wdata(lsu_wdata), .lsu_wmask(lsu_wmask),
+    .lsu_respValid(lsu_resp_valid), .lsu_rdata(lsu_rdata),
+    .bus_error(bus_error)
   );
 
-  // 只在指令提交边界上报事件，保证 PC、指令和退出码属于同一条客户指令。
-  // 总线错误优先于非法指令和 ebreak，避免一次故障产生相互矛盾的结果。
+  // 总线错误优先于非法指令和 ebreak，避免把失败访问误报为正常结束。
   always_ff @(posedge clock) begin
     if (!reset && core_step) begin
-      if (bus_error) npc_bus_error(pc,
-          {29'd0, fabric_error, master_protocol_error, lite_bus_error});
+      if (bus_error) npc_bus_error(pc, 32'd1);
       else if (illegal) npc_abort(pc, inst);
-      if (is_ebreak && !bus_error) npc_ebreak(pc, trap_code);
+      else if (is_ebreak) npc_ebreak(pc, trap_code);
     end
   end
 

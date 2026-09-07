@@ -5,7 +5,7 @@
 ## 当前目标
 
 正式实现只面向讲义规定的 MiniRV，不实现完整 RV32E。`minirvEMU` 按用户要求暂缓。
-E7 的 NPC、AM、总线和 ysyxSoC 功能接入保留；E8 只总结，不执行物理设计。
+E7 的 NPC、AM、SimpleBus 和 ysyxSoC 功能接入保留；E8 只总结，不执行物理设计。
 
 ## MiniRV 指令范围
 
@@ -33,7 +33,7 @@ add  addi  lui  lw  lbu  sw  sb  jalr
 - good trap、bad trap、非法指令、总线错误和超时；
 - MiniRV itrace；
 - NEMU 参考模型只保留 8 条 MiniRV 指令；
-- AXI4-Lite 和 4x4 AXI 互联。
+- SimpleBus 主设备、NPC 主存/MMIO 从端和可配置响应延迟。
 
 定向测试 `npc/tests/minirv-directed.S` 只包含 MiniRV 指令，覆盖 8 条基础指令。
 
@@ -84,6 +84,17 @@ make -C am-kernels/tests/cpu-tests \
 - `SYNTHESIS` 条件隔离仿真 DPI。
 
 SoC 自建测试统一改为 `ARCH=minirv-ysyxsoc`。
+
+## SimpleBus 对齐（2026-09-07）
+
+已删除此前误加的 AXI4/AXI4-Lite 主设备、适配器、4x4 互联、错误从设备及其独立测试。
+NPC 顶层现为：
+
+```text
+minirv_core -> minirv_simple_bus_master -> simple_bus_pmem
+```
+
+SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官方框架负责。
 
 ## 删除的额外内容
 

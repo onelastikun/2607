@@ -41,7 +41,7 @@ module minirv_simple_bus_master (
   // 取指响应当拍直接译码；访存指令随后锁存在 inst_reg 中等待 LSU 响应。
   assign core_inst = ((state == FETCH_RESP) && io_ifu_respValid)
                    ? io_ifu_rdata : inst_reg;
-  // AXI/APB 数据按地址低位放在对应字节通道，核心侧则统一从低位取数。
+  // SimpleBus 数据按地址低位放在对应字节通道，核心侧统一从低位取数。
   assign core_dmem_rdata = ((state == LOAD_RESP) && io_lsu_respValid)
                          ? (io_lsu_rdata >> byte_shift) : 32'd0;
 

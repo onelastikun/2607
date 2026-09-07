@@ -3,7 +3,7 @@
 更新日期：2026-09-07
 
 本文是 `npc/README.md` 的 SoC 补充说明。前者系统讲解 NPC 的 C++ 仿真器和
-MiniRV/AXI 代码；本文重点解释新加入的 ysyxSoC 仿真、AM 平台、GPIO、NVBoard，
+MiniRV/SimpleBus 代码；本文重点解释新加入的 ysyxSoC 仿真、AM 平台、GPIO、NVBoard，
 以及后续参加流片前需要由你亲自完成和确认的工作。
 
 官方讲义：
@@ -235,7 +235,7 @@ make -C npc/soc test-hello
 
 - 8 条 MiniRV 指令如何生成立即数、写回值和下一 PC；
 - load/store 的字节 lane、符号扩展和写掩码；
-- AXI/SimpleBus 为什么必须等待响应；
+- SimpleBus 为什么必须等待 `respValid`；
 - Flash boot、PSRAM 搬运和 AM 链接地址的关系；
 - UART、GPIO 和 mcycle 的软件/硬件边界；
 - C++ 仿真器如何判断一条指令提交和 good/bad trap。

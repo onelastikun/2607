@@ -50,16 +50,14 @@ extern "C" void npc_ebreak(std::uint32_t pc, std::uint32_t code) {
   g_state->code = code;
 }
 
-// cause 的低三位依次表示 Lite 响应、主设备协议和互联内部错误。
+// SimpleBus 从端用 cause 标记地址或访问类型错误。
 extern "C" void npc_bus_error(std::uint32_t pc, std::uint32_t cause) {
   if (g_state == nullptr) return;
   g_state->aborted = true;
   g_state->pc = pc;
-  std::cerr << "bus response error before pc=0x" << std::hex << std::setw(8)
-            << std::setfill('0') << pc << " cause=0x" << cause << std::dec
-            << " (lite-response=" << (cause & 0x1u)
-            << ", master-protocol=" << ((cause >> 1) & 0x1u)
-            << ", fabric=" << ((cause >> 2) & 0x1u) << ")\n";
+  std::cerr << "SimpleBus access error before pc=0x" << std::hex
+            << std::setw(8) << std::setfill('0') << pc << " cause=0x"
+            << cause << std::dec << '\n';
 }
 
 // 非法指令属于架构执行错误，与总线响应错误分开报告。
