@@ -1200,11 +1200,10 @@ make -C am-kernels/tests/cpu-tests \
 ```bash
 make -C npc/soc test-runtime
 make -C npc/soc test-gpio
-make -C npc/soc/nvboard smoke
-make -C npc/soc/nvboard test-gpio
+make -C npc/soc smoke
 ```
 
-这些目标统一用 `ARCH=minirv-ysyxsoc` 生成镜像。
+这些目标统一用 `ARCH=minirv-ysyxsoc` 生成镜像。普通 `make ARCH=minirv-ysyxsoc` 默认直接打开 NVBoard，自动测试才使用无界面模式。
 
 ## 37. 推荐调试顺序
 

@@ -9,19 +9,26 @@
 - `../vsrc/soc/NPC.sv`：适配 ready-to-run 文件固定使用的 `NPC` 模块名；
 - `../vsrc/soc/minirv_simple_bus_master.sv`：取指和 LSU 请求状态机；
 - `csrc/flash_image.cpp`：外部 SPI Flash 镜像；
-- `csrc/simulator.cpp`：以 2:1 比例驱动 CPU 时钟和 SoC 时钟；
+- `csrc/simulator.cpp`：统一驱动双时钟、波形和 NVBoard；
+- `constr/SimTop.nxdc`：开关、LED、数码管和 UART 引脚绑定；
 - `vsrc/uart_apb_monitor.sv`：旁路观察真正到达 16550 的 APB 写事务并输出字符。
 
 仿真使用 `PDK_BEHAV` 行为级 PAD，不需要也不会加载流片 PDK。
 
 ## 使用
 
+`minirv-ysyxsoc` 默认直接打开 NVBoard，不再维护单独的 NVBoard 子工程。例如：
+
 ```bash
-source ../../.envrc
-make -C npc/soc run
+cd /home/onelastikun/to_test/ysyx-workbench
+source .envrc
+make -C am-kernels/tests/am-tests ARCH=minirv-ysyxsoc mainargs=t
 ```
 
-默认运行 ysyxSoC 提供的 `hello-minirv-ysyxsoc.bin`。指定自定义镜像：
+不写目标时会自动完成编译、Flash 打包并打开 NVBoard。程序 good trap 后会保留最后的
+LED 和数码管状态，关闭 NVBoard 窗口即可退出。
+
+也可以直接运行指定镜像：
 
 ```bash
 make -C npc/soc run IMG=/absolute/path/program.soc.bin
@@ -30,9 +37,12 @@ make -C npc/soc run IMG=/absolute/path/program.soc.bin
 可选参数：
 
 ```bash
-make -C npc/soc run MAX_CYCLES=500000000 GPIO=0x1234
+make -C npc/soc run GPIO=0x1234
 make -C npc/soc run WAVE=build/soc.vcd
+make -C npc/soc run HEADLESS=1 MAX_CYCLES=500000000
 ```
+
+`HEADLESS=1` 仅用于自动测试；普通运行默认打开 NVBoard。
 
 SoC 从 SPI XIP 地址 `0x30000000` 启动，bootloader 解析 Flash 中嵌入的 ELF，
 把可加载段搬运到 `0x80000000` 起始的 PSRAM 后跳转执行。因此完整启动比 NPC
@@ -47,7 +57,7 @@ SoC AM 程序统一使用讲义规定的 `ARCH=minirv-ysyxsoc`。MiniRV 工具�
 3.6864 MHz CPU 频率换算为微秒。可执行短功能回归：
 
 ```bash
-source ../../.envrc
+source .envrc
 make -C npc/soc test-runtime
 ```
 
@@ -68,7 +78,7 @@ make -C npc/soc test-runtime
 正确和错误两种输入：
 
 ```bash
-source ../../.envrc
+source .envrc
 make -C npc/soc test-gpio
 ```
 

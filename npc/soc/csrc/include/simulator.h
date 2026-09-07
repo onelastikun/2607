@@ -23,6 +23,8 @@ class Simulator {
   std::uint16_t gpio_output() const;
   std::uint32_t gpio_digits() const;
   std::uint64_t gpio_change_count() const { return gpio_change_count_; }
+  bool nvboard_enabled() const { return nvboard_enabled_; }
+  [[noreturn]] void wait_for_nvboard_close();
 
  private:
   void evaluate();
@@ -35,6 +37,7 @@ class Simulator {
   std::uint64_t cpu_cycles_ = 0;
   std::uint16_t previous_gpio_output_ = 0;
   std::uint64_t gpio_change_count_ = 0;
+  bool nvboard_enabled_ = false;
 };
 
 }  // 命名空间 npc::soc

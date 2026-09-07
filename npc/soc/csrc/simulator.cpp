@@ -1,11 +1,16 @@
 #include "simulator.h"
 
+#include <nvboard.h>
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 
 #include <array>
+#include <chrono>
+#include <thread>
 
 #include "VSimTop.h"
+
+void nvboard_bind_all_pins(VSimTop *top);
 
 namespace npc::soc {
 
@@ -17,7 +22,15 @@ Simulator::Simulator(const Options &options)
   dut_->reset = 1;
   dut_->coreSel = 0;
   dut_->externalPins_mygpio_in = options.gpio_input;
-  dut_->externalPins_uart0_rx = 1;  // UART 空闲电平为高。
+  dut_->externalPins_uart0_rx = 1;
+
+  // minirv-ysyxsoc 默认直接连接 NVBoard；自动测试使用 --headless 跳过 SDL。
+  if (!options.headless) {
+    nvboard_bind_all_pins(dut_.get());
+    nvboard_init();
+    nvboard_enabled_ = true;
+  }
+
   if (!options.wave_path.empty()) {
     context_->traceEverOn(true);
     trace_ = std::make_unique<VerilatedVcdC>();
@@ -31,6 +44,7 @@ Simulator::Simulator(const Options &options)
 Simulator::~Simulator() {
   dut_->final();
   if (trace_) trace_->close();
+  if (nvboard_enabled_) nvboard_quit();
 }
 
 void Simulator::reset() {
@@ -43,11 +57,18 @@ void Simulator::reset() {
 void Simulator::step() {
   // CPU 每个时间量翻转，SoC 时钟每两个时间量翻转，因此 CPU 频率是 SoC 的两倍。
   dut_->cpuClock = !dut_->cpuClock;
-  if ((phase_ & 1u) != 0) dut_->clock = !dut_->clock;
+  bool soc_rising = false;
+  if ((phase_ & 1u) != 0) {
+    dut_->clock = !dut_->clock;
+    soc_rising = dut_->clock != 0;
+  }
   phase_ = (phase_ + 1u) & 3u;
   if (dut_->cpuClock) ++cpu_cycles_;
   evaluate();
   observe_gpio();
+
+  // NVBoard 每个 SoC 上升沿更新一次，保持 UART 采样和外设时钟一致。
+  if (nvboard_enabled_ && soc_rising) nvboard_update();
 }
 
 void Simulator::evaluate() {
@@ -91,6 +112,14 @@ std::uint32_t Simulator::gpio_digits() const {
     result |= digit << (position * 4u);
   }
   return result;
+}
+
+[[noreturn]] void Simulator::wait_for_nvboard_close() {
+  // 程序结束后保留最后的 LED/数码管状态，用户关闭窗口时 NVBoard 会结束进程。
+  while (true) {
+    nvboard_update();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
 }
 
 }  // 命名空间 npc::soc

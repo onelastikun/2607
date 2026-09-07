@@ -11,7 +11,7 @@ namespace {
 [[noreturn]] void usage(const char *program, const char *message = nullptr) {
   if (message != nullptr) std::cerr << "error: " << message << '\n';
   std::cerr << "usage: " << program
-            << " --image FILE [--max-cycles N] [--wave FILE] [--gpio N]\n";
+            << " --image FILE [--max-cycles N] [--wave FILE] [--gpio N] [--headless]\n";
   std::exit(EXIT_FAILURE);
 }
 
@@ -44,6 +44,8 @@ Options parse_options(int argc, char **argv) {
       const auto value = parse_u64(argv[i], argv[0]);
       if (value > 0xffffu) usage(argv[0], "GPIO input exceeds 16 bits");
       options.gpio_input = static_cast<std::uint16_t>(value);
+    } else if (arg == "--headless") {
+      options.headless = true;
     } else if (arg == "--help" || arg == "-h") {
       usage(argv[0]);
     } else {

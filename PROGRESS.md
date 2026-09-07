@@ -110,6 +110,16 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 上游 Abstract Machine 自带的 `riscv32e-npc.mk` 和 `riscv32e-nemu.mk` 没有删除，但
 本项目正式流程不使用它们。
 
+
+## minirv-ysyxsoc 与 NVBoard 合并（2026-09-07）
+
+- 删除 `npc/soc/nvboard/` 的重复 Makefile 和 C++ 入口；
+- `npc/soc` 现在是唯一的 ysyxSoC 仿真入口，并默认初始化 NVBoard；
+- `make ARCH=minirv-ysyxsoc` 会自动编译、打包并打开 NVBoard；
+- 自动回归通过 `--headless` 复用同一个可执行文件；
+- `MAX_CYCLES=0` 表示交互运行不设超时；
+- good trap 后保留最后的 LED/数码管状态，直到用户关闭窗口。
+
 ## 当前限制
 
 - `minirvEMU` 暂缓；

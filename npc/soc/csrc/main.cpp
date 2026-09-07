@@ -26,7 +26,8 @@ int main(int argc, char **argv) {
     simulator.reset();
 
     while (!state.halted && !state.aborted &&
-           simulator.cpu_cycles() < options.max_cpu_cycles) {
+           (options.max_cpu_cycles == 0 ||
+            simulator.cpu_cycles() < options.max_cpu_cycles)) {
       simulator.step();
     }
 
@@ -59,6 +60,10 @@ int main(int argc, char **argv) {
               << ", gpio_digits=0x" << simulator.gpio_digits()
               << ", gpio_changes=" << std::dec << simulator.gpio_change_count()
               << '\n';
+    if (simulator.nvboard_enabled()) {
+      std::cout << "程序已结束，关闭 NVBoard 窗口退出。\n";
+      simulator.wait_for_nvboard_close();
+    }
     return EXIT_SUCCESS;
   } catch (const std::exception &error) {
     std::cerr << "fatal: " << error.what() << '\n';

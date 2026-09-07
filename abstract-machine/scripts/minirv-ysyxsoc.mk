@@ -15,3 +15,6 @@ AM_SRCS += riscv/npc/libgcc/div.S \
            riscv/npc/libgcc/multi3.c \
            riscv/npc/libgcc/ashldi3.c \
            riscv/npc/libgcc/unused.c
+
+# 对该架构不指定目标时，直接打包镜像并打开统一的 ysyxSoC NVBoard 仿真器。
+.DEFAULT_GOAL := run

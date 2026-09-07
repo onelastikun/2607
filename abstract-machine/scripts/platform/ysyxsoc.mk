@@ -26,7 +26,7 @@ SOC_ELF := $(IMAGE).soc.elf
 SOC_BIN := $(IMAGE).soc.bin
 
 # mainargs 写入 ELF 副本，避免破坏原始 ELF 中只能匹配一次的占位字符串。
-$(SOC_ELF): $(IMAGE).elf
+$(SOC_ELF): $(IMAGE).elf force
 	@cp $< $@
 	@python $(AM_HOME)/tools/insert-arg.py $@ $(MAINARGS_MAX_LEN) \
 		$(MAINARGS_PLACEHOLDER) "$(mainargs)"
@@ -42,7 +42,7 @@ image: image-dep
 
 soc-image: $(SOC_BIN)
 
-YSYXSOC_RUN_FLAGS ?= MAX_CYCLES=500000000
+YSYXSOC_RUN_FLAGS ?= MAX_CYCLES=0
 run: soc-image
 	$(MAKE) -C $(NPC_HOME)/soc run IMG=$(SOC_BIN) $(YSYXSOC_RUN_FLAGS)
 

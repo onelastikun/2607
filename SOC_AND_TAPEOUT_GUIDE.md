@@ -93,7 +93,7 @@ APB 访问只在 `PSEL && PENABLE` 的 access 阶段完成；写入尊重 `PSTRB
 
 ## 3. SoC C++ 代码导读（面向只熟悉 C 的读者）
 
-目录：`npc/soc/csrc/`。
+目录：`npc/soc/csrc/`。该目录现在同时负责 SoC 和 NVBoard，不再有嵌套的第二套入口。
 
 ### 3.1 先把 C++ 看成“带资源自动管理的 C”
 
@@ -215,9 +215,9 @@ make -C npc/soc test-runtime
 # SoC 流水灯、密码锁和 8 位数码管
 make -C npc/soc test-gpio
 
-# NVBoard 构建/启动 smoke 与完整 GPIO 镜像
-make -C npc/soc/nvboard smoke
-make -C npc/soc/nvboard test-gpio
+# 统一的 SoC/NVBoard 构建与 GPIO 回归
+make -C npc/soc smoke
+make -C npc/soc test-gpio
 ```
 
 官方 MiniRV 大镜像回归耗时明显更长，仅在改动 MiniRV 指令替换、Flash boot 或 PSRAM

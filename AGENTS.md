@@ -287,6 +287,7 @@ E5 主线是把经过验证的 MiniRV CPU 组织成清晰、可维护的单周�
 - SoC AM 程序统一使用讲义规定的 `minirv-ysyxsoc` 架构；
 - UART 16550、`mvendorid/marchid/mcycle`、AM uptime 和 GPIO 必须通过短功能测试；
 - GPIO 寄存器遵循讲义的 `0x0/0x4/0x8` 映射；
+- `minirv-ysyxsoc` 默认直接打开统一的 NVBoard/SoC 仿真入口，不维护重复的嵌套入口；
 - NVBoard 连接开关、LED、8 个数码管和 UART，区分软件仿真与真实 FPGA 实测；
 - 仿真 DPI 必须用 `SYNTHESIS` 条件隔离，不进入综合网表；
 - 按用户要求可跳过 MicroBench/archbench 等耗时 SoC 性能评测，但必须记录未执行项。

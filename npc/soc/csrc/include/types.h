@@ -10,6 +10,7 @@ struct Options {
   std::string wave_path;
   std::uint64_t max_cpu_cycles = 100000000;
   std::uint16_t gpio_input = 0;
+  bool headless = false;  // 默认打开 NVBoard；自动回归可显式关闭图形界面。
 };
 
 struct RunState {
