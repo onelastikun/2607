@@ -176,12 +176,12 @@ E5 中列出的数字电路实验题不是“一生一芯”项目的强制交�
 - C/C++ 侧能够读取 DUT 的通用寄存器状态用于检查；
 - 统计仿真时间、周期数、指令数等基本信息时，避免把宿主机时间误当成客户程序时间。
 
-### MiniRV / RV32E CPU
+### MiniRV CPU
 
 - 从最小可运行指令开始，例如 `addi`，逐条扩展。
-- 最终支持 MiniRV/RV32E 测试和后续 AM 程序实际需要的指令集合。
-- RV32E 只有 16 个通用寄存器；`x0` 必须恒为 0。
-- 所有立即数符号扩展、比较的有符号/无符号语义、移位位数、分支和跳转目标必须按规范实现。
+- 正式硬件只支持讲义规定的 8 条 MiniRV 指令，以及后续章节明确要求的 `ebreak` 和只读 CSR。
+- MiniRV 沿用 RV32E 的 16 个通用寄存器；`x0` 必须恒为 0。
+- ADDI/访存/JALR 的立即数符号扩展、地址计算和 JALR 目标最低位清零必须按规范实现。
 - 访存接口传递完整物理地址，不要让 C/C++ 内存函数依赖 DUT 内部偏移地址。
 - 正确处理小端序、读写宽度、写掩码和地址越界。
 - CPU 功能实现不得依赖某个测试程序的固定指令顺序。
@@ -311,7 +311,7 @@ E5 主线是把经过验证的 MiniRV CPU 组织成清晰、可维护的单周�
 
 - CPU 顶层使用 `ysyx_25100265`，复位向量为 `0x30000000`；
 - 通过 SimpleBus 连接官方 SoC，在 SPI Flash XIP 执行 bootloader，并将 ELF 段搬到 PSRAM；
-- 提供 `minirv-ysyxsoc` 和用于快速功能回归的 `riscv32e-ysyxsoc` AM 架构；
+- SoC AM 程序统一使用讲义规定的 `minirv-ysyxsoc` 架构；
 - UART 16550、`mvendorid/marchid/mcycle`、AM uptime 和 GPIO 必须通过短功能测试；
 - GPIO 寄存器遵循讲义的 `0x0/0x4/0x8` 映射；
 - NVBoard 连接开关、LED、8 个数码管和 UART，区分软件仿真与真实 FPGA 实测；
@@ -336,9 +336,9 @@ E5 主线是把经过验证的 MiniRV CPU 组织成清晰、可维护的单周�
 3. **CPU 最小闭环**
    - PC、取指、`addi`、寄存器、`ebreak`。
 
-4. **RV32E 完整功能**
-   - 运算、跳转、分支、访存；
-   - 指令测试全部通过。
+4. **MiniRV 完整功能**
+   - 完成 add/addi/lui/lw/lbu/sw/sb/jalr；
+   - MiniRV 指令测试全部通过。
 
 5. **DiffTest 与标准测试**
    - NEMU DiffTest；

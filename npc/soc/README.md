@@ -40,12 +40,9 @@ SoC 从 SPI XIP 地址 `0x30000000` 启动，bootloader 解析 Flash 中嵌入�
 
 ## AM 架构与短回归
 
-仓库提供两种 SoC AM 架构：
-
-- `ARCH=minirv-ysyxsoc`：正式 MiniRV 指令替换路径；
-- `ARCH=riscv32e-ysyxsoc`：不注入大型查找表，用于快速功能回归。
-
-两者都会把 AM ELF 嵌入官方 Flash 模板，由 bootloader 搬运到 PSRAM。运行时已完成
+SoC AM 程序统一使用讲义规定的 `ARCH=minirv-ysyxsoc`。MiniRV 工具链会把
+普通 C 编译产生的指令替换为 8 条 MiniRV 基础指令，再把 ELF 嵌入官方 Flash 模板，
+由 bootloader 搬运到 PSRAM。运行时已完成
 16550 初始化与轮询输出；`AM_TIMER_UPTIME` 从 `mcycle/mcycleh` 读取周期并按
 3.6864 MHz CPU 频率换算为微秒。可执行短功能回归：
 

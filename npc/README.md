@@ -1013,7 +1013,7 @@ dlsym(handle, "difftest_exec");
 DUT 提交一条指令后：
 
 1. NEMU 执行一条指令；
-2. 从 NEMU 取回 PC 和 16 个 RV32E 寄存器；
+2. 从 NEMU 取回 PC 和 16 个 MiniRV 寄存器；
 3. 比较下一 PC；
 4. 比较 x0~x15；
 5. 输出第一个不一致项；
@@ -1090,576 +1090,212 @@ if (simulator.commit_valid())
 
 # 第三部分：RTL 代码导读
 
-## 27. 先区分组合逻辑和时序逻辑
+## 27. MiniRV 的正式指令范围
 
-### 27.1 `always_comb`
+本项目只实现讲义要求的 8 条基础指令：
 
-组合逻辑没有记忆：输出只取决于当前输入。
+```text
+add  addi  lui  lw  lbu  sw  sb  jalr
+```
+
+另外保留两个后续章节明确需要的能力：
+
+- `ebreak`：向仿真器报告 good/bad trap；
+- `CSRRS rd, csr, x0`：读取 E7 要求的 `mvendorid`、`marchid` 和周期计数。
+
+MiniRV 沿用 RV32E 的 16 个寄存器约定只是 ABI 和寄存器数量说明，不代表硬件实现
+完整 RV32E 指令集。普通 C 程序先由 GCC 生成汇编，再由 `minirv-gcc` 把复杂指令
+替换成上述 8 条指令的组合。
+
+## 28. 组合逻辑和时序逻辑
+
+`minirv_decode.sv` 使用 `always_comb`，只根据当前 PC、指令、寄存器值和读数据计算：
+
+- 下一 PC；
+- 是否写寄存器及写回数据；
+- 是否访问存储器；
+- 地址、长度、写数据和写掩码；
+- 是否为 `ebreak` 或非法指令。
+
+组合块先给所有输出默认值，避免推导锁存器。
+
+`minirv_core.sv` 和寄存器堆使用 `always_ff @(posedge clock)` 保存状态。时序块使用
+非阻塞赋值 `<=`，并且只有 `step=1` 时才提交当前指令。
+
+## 29. `minirv_regfile.sv`
+
+寄存器堆包含 `x0~x15`：
+
+- 两个组合读端口；
+- 一个时序写端口；
+- `x0` 始终为 0；
+- 展平后的寄存器状态只用于 DiffTest 和调试。
+
+指令字段仍有 5 位寄存器编号。若最高位为 1，表示访问 `x16~x31`，译码器会报告
+非法指令，而不是简单截断成低 4 位。
+
+## 30. `minirv_decode.sv`
+
+### 30.1 算术和立即数
+
+- `add`：两个寄存器相加；
+- `addi`：寄存器与符号扩展的 12 位立即数相加；
+- `lui`：把指令高 20 位放到结果的高 20 位。
+
+### 30.2 访存
+
+- `lw`：读取 4 字节；
+- `lbu`：读取 1 字节并零扩展；
+- `sw`：写掩码为 `1111`；
+- `sb`：核心侧写掩码为 `0001`，总线适配器再按地址低位移动到正确 byte lane。
+
+### 30.3 `jalr`
+
+`jalr` 把 `pc+4` 写入 `rd`，目标为：
+
+```text
+(rs1 + sign_extend(imm12)) & ~1
+```
+
+清除最低位是 RISC-V 对 `jalr` 的要求。
+
+### 30.4 CSR 和 ebreak
+
+CSR 只支持读取，不实现写入。未知 CSR 或写只读 CSR会报告非法指令。
+`ebreak` 本身不修改架构状态，由 C++ 仿真器读取 `a0` 作为退出码。
+
+## 31. `minirv_core.sv`
+
+核心保存：
+
+- PC；
+- `mcycle` 周期计数；
+- 已提交指令数；
+- 最近一次提交的 PC 和机器码。
+
+总线可能等待多个周期，所以 `eval()` 或时钟变化不等于提交一条指令。只有总线适配器
+确认取指或访存完成并拉高 `step`，PC 和寄存器状态才更新。
+
+## 32. 总线模块
+
+NPC 仿真路径使用 AXI4-Lite 主设备和 4x4 AXI 互联，SoC 路径使用 SimpleBus。
+这些模块改变的是存储器访问时序，不扩展 MiniRV 指令集。
+
+关键原则：
+
+- `valid` 在握手前保持；
+- 请求信息等待期间稳定；
+- CPU 等待读数据或写响应后再提交；
+- 串口和计时器通过总线路径访问；
+- 非法地址返回错误响应，不能误访问宿主内存。
+
+## 33. SoC 顶层
+
+`vsrc/soc/ysyx_25100265.sv` 将复位向量改为 `0x30000000`，通过
+`minirv_simple_bus_master.sv` 接入 ysyxSoC。仿真 DPI 被放在：
 
 ```systemverilog
-always_comb begin
-  result = 32'd0;
-  if (enable) result = a + b;
-end
+`ifndef SYNTHESIS
+...
+`endif
 ```
 
-组合块应该先给所有输出默认值。如果某条路径没有赋值，综合工具可能推断锁存器。
-
-### 27.2 `always_ff @(posedge clock)`
-
-时序逻辑在时钟上升沿更新状态：
-
-```systemverilog
-always_ff @(posedge clock) begin
-  if (reset) q <= 0;
-  else if (enable) q <= d;
-end
-```
-
-时序逻辑使用非阻塞赋值 `<=`，使同一个时钟沿上的寄存器同时更新。
-
-当前工程遵循：
-
-- 译码和 ALU 放在组合逻辑；
-- PC、寄存器堆、总线状态机放在时序逻辑；
-- 同一个状态寄存器只由一个时序块驱动。
-
----
-
-## 28. `minirv_regfile.sv`
-
-RV32E 只有 16 个寄存器：
-
-```text
-x0 ~ x15
-```
-
-两个源寄存器通过组合端口读取。目的寄存器只在 `rd_write` 有效的时钟沿更新。
-
-`x0` 通过两层保护保持为 0：
-
-1. `rd_idx == 0` 时禁止写；
-2. 每个非复位周期再次执行 `gpr[0] <= 0`。
-
-`gpr_state` 把数组展平为 512 位信号，便于 Verilator 从 C++ 读取全部寄存器。
-
----
-
-## 29. `minirv_decode.sv`
-
-这是纯组合译码模块，主要输出：
-
-- `next_pc`；
-- 是否写寄存器；
-- 写回数据；
-- load/store 请求；
-- `ebreak`；
-- 非法指令标志。
-
-### 29.1 RV32E 寄存器合法性
-
-指令中寄存器编号仍有 5 位。CPU 核心取低 4 位作为数组下标，同时译码器检查最高位：
-
-```text
-bit4 = 0：x0~x15，合法
-bit4 = 1：x16~x31，对 RV32E 非法
-```
-
-不能仅截断到 4 位，否则编码中的 x16 会错误地当成 x0。
-
-### 29.2 默认值
-
-组合块开头把所有输出设为安全默认值，例如：
-
-```text
-next_pc = pc + 4
-不写寄存器
-不读写数据存储器
-不是 ebreak
-不是非法指令
-```
-
-每种 opcode 只覆盖自己需要的输出。
-
-### 29.3 load
-
-总线统一返回从目标地址开始的 32 位值，译码器再根据 funct3：
-
-- 选择 8、16 或 32 位；
-- 对 `lb/lh` 做符号扩展；
-- 对 `lbu/lhu` 做零扩展。
-
-### 29.4 store
-
-`sb/sh/sw` 使用相同的 32 位写数据，区别体现在：
-
-```text
-sb → wmask=0001
-sh → wmask=0011
-sw → wmask=1111
-```
-
----
-
-## 30. `minirv_core.sv`
-
-核心模块连接寄存器堆和译码器，并保存：
-
-- 当前 PC；
-- 提交计数；
-- 最近提交 PC；
-- 最近提交机器码。
-
-最关键的信号是 `step`。
-
-当 `step=0`：
-
-- 当前指令还在等待总线；
-- PC 不更新；
-- 寄存器不写回；
-- 不产生 `commit_valid`。
-
-当 `step=1`：
-
-- PC 更新为 `next_pc`；
-- 目的寄存器写回；
-- 指令计数增加；
-- `commit_valid` 拉高一个周期。
-
-这就是 NPC 的架构提交边界。
-
----
-
-## 31. `minirv_axi_lite_master.sv`
-
-CPU 核心使用简单请求接口，但 AXI 要求多个独立握手通道。因此该模块使用状态机连接二者。
-
-### 31.1 状态
-
-| 状态 | 含义 |
-|---|---|
-| `FETCH_ADDR` | 发送取指读地址 |
-| `FETCH_DATA` | 等待取指数据 |
-| `LOAD_ADDR` | 发送 load 读地址 |
-| `LOAD_DATA` | 等待 load 数据 |
-| `STORE_SEND` | 独立发送 AW 和 W |
-| `STORE_RESP` | 等待写响应 B |
-
-### 31.2 普通指令
-
-```text
-FETCH_ADDR → FETCH_DATA → 提交 → FETCH_ADDR
-```
-
-### 31.3 load
-
-```text
-FETCH_ADDR → FETCH_DATA → LOAD_ADDR → LOAD_DATA → 提交 → FETCH_ADDR
-```
-
-### 31.4 store
-
-```text
-FETCH_ADDR → FETCH_DATA → STORE_SEND → STORE_RESP → 提交 → FETCH_ADDR
-```
-
-### 31.5 AW 和 W 为什么分别记录
-
-AXI 写地址和写数据是两个独立通道：
-
-- AW 可能先握手；
-- W 可能先握手；
-- 也可能同一拍握手。
-
-`aw_done` 和 `w_done` 分别记录结果。只有两者都完成后，状态机才能进入 `STORE_RESP`。
-
-已握手通道的 `valid` 会撤销，未握手通道继续保持 `valid`、地址或数据不变。
-
----
-
-## 32. AXI 的五个通道
-
-| 通道 | 全称 | 主要信号 | 方向 |
-|---|---|---|---|
-| AR | 读地址 | `arvalid/arready/araddr` | 主 → 从 |
-| R | 读数据 | `rvalid/rready/rdata/rresp` | 从 → 主 |
-| AW | 写地址 | `awvalid/awready/awaddr` | 主 → 从 |
-| W | 写数据 | `wvalid/wready/wdata/wstrb` | 主 → 从 |
-| B | 写响应 | `bvalid/bready/bresp` | 从 → 主 |
-
-一次传输只在：
-
-```text
-valid == 1 && ready == 1
-```
-
-的时钟沿发生。
-
-重要规则：
-
-1. 发送方不能等待 `ready` 后才产生 `valid`；
-2. `valid=1` 后，在握手前必须保持有效；
-3. 等待握手期间地址、数据、掩码和控制信息必须稳定；
-4. 读写通道可以独立推进；
-5. 写事务必须等到 B 响应，不能只看到 AW/W 握手就认为完成。
-
----
-
-## 33. `axi_lite_master_to_axi4.sv`
-
-AXI4-Lite 没有 ID 和 burst 字段，而 4×4 互联使用 AXI4 风格接口。因此适配器补充：
-
-```text
-ID    = 固定读/写 ID
-LEN   = 0       只有一拍
-SIZE  = 2       2^2 = 4 字节
-BURST = INCR
-WLAST = 1
-```
-
-返回时检查：
-
-- `RID` 是否等于固定读 ID；
-- 单拍读响应是否带 `RLAST`；
-- `BID` 是否等于固定写 ID。
-
----
-
-## 34. `axi4_interconnect_4x4.sv`
-
-### 34.1 打包端口
-
-四路信号使用一个宽总线表示。例如：
-
-```systemverilog
-logic [4*32-1:0] m_araddr;
-```
-
-含义是四个 32 位地址连接成 128 位：
-
-```text
-m_araddr[31:0]    主设备 0
-m_araddr[63:32]   主设备 1
-m_araddr[95:64]   主设备 2
-m_araddr[127:96]  主设备 3
-```
-
-SystemVerilog 的：
-
-```systemverilog
-m_araddr[index*32 +: 32]
-```
-
-表示从 `index*32` 开始向高位选择 32 位。
-
-### 34.2 地址译码
-
-| 地址最高 4 位 | 从设备槽 | 用途 |
-|---|---:|---|
-| `0x8` | 0 | 主存 |
-| `0xa` | 1 | MMIO |
-| `0xc` | 2 | 保留扩展窗口，目前返回错误 |
-| 其他 | 3 | 默认错误窗口 |
-
-### 34.3 仲裁
-
-每个从设备分别扫描主设备 0~3。当前采用固定优先级：
-
-```text
-主设备 0 > 主设备 1 > 主设备 2 > 主设备 3
-```
-
-某个从设备已经选中一个请求后，不再接受同拍的其他请求。
-
-### 34.4 ID 扩展
-
-下游 ID 由两部分组成：
-
-```text
-{主设备编号, 原始 ID}
-```
-
-响应返回时读取高 2 位找到目标主设备，再把低位原始 ID 返回。
-
-### 34.5 W 通道目标
-
-W 通道没有 ID，无法单独判断属于哪个地址。因此互联在 AW 握手时记录：
-
-- 该主设备存在未完成写事务；
-- 该写事务目标从设备编号。
-
-直到 B 响应完成才清除记录。
-
----
-
-## 35. `axi4_to_lite_slave.sv` 与 `axi_lite_pmem.sv`
-
-`axi4_to_lite_slave` 在 AR/AW 握手时保存 ID，因为后面的 Lite 接口没有 ID。Lite 响应到达后再恢复为 RID/BID。
-
-`axi_lite_pmem` 是最终平台从设备：
-
-- 锁存读地址；
-- 等待可配置读延迟；
-- 调用 `pmem_read()`；
-- 保持 `rvalid/rdata` 直到握手；
-- 分别锁存 AW 和 W；
-- 两者都到达后等待写延迟；
-- 调用 `pmem_write()`；
-- 产生 B 响应。
-
-`test-delayed` 会使用非零读写延迟重新运行 114 条指令，以证明 CPU 没有错误地假设存储器一定单周期返回。
-
----
-
-## 36. `axi4_error_slave.sv`
-
-非法地址不能直接让所有 `ready` 保持为 0，否则 CPU 会永久等待并最终只表现为超时。
-
-错误从设备会正常接受事务，然后返回：
-
-- `DECERR`：地址窗口不存在；
-- `SLVERR`：事务格式违反当前裁剪协议。
-
-这样仿真器能够在发起访问的指令处准确报告总线错误。
-
----
-
-## 37. `top.sv`
-
-顶层主要做四件事：
-
-1. 连接 CPU 核心和 AXI4-Lite 主设备；
-2. 通过适配器接入 4×4 AXI4 互联；
-3. 汇总 Lite 响应错误、主设备协议错误和互联错误；
-4. 在指令提交边界调用 DPI-C 回调。
-
-顶层不实现具体指令语义，也不直接保存客户主存。
-
-事件优先级为：
-
-```text
-总线错误 > 非法指令 > ebreak
-```
-
-避免一次故障同时被报告为正常结束。
-
----
+因此综合时不会把 C++ 回调带入硬件。
 
 # 第四部分：运行与调试
 
-## 38. 常用命令
+## 34. 正式构建架构
 
-进入根目录后先加载环境：
+E 阶段只使用：
+
+```text
+ARCH=minirv-npc
+ARCH=minirv-ysyxsoc
+```
+
+不要使用原生 RV32E 架构代替 MiniRV 验收。
+
+## 35. 常用 NPC 命令
 
 ```bash
 source .envrc
-```
 
-### 38.1 构建 NPC
-
-```bash
-make -C npc
-```
-
-### 38.2 运行内置程序
-
-```bash
-make -C npc run
-```
-
-### 38.3 运行指定镜像
-
-```bash
-make -C npc run IMG=/absolute/path/program.bin MAX_CYCLES=100000
-```
-
-使用绝对路径最不容易受到 `make -C` 工作目录变化影响。
-
-### 38.4 查看指令轨迹
-
-```bash
-make -C npc run IMG=/absolute/path/program.bin ITRACE=1
-```
-
-输出示例：
-
-```text
-0x80000000: 0x00100093  addi x1, x0, 1
-```
-
-### 38.5 生成波形
-
-```bash
-make -C npc run \
-  IMG=/absolute/path/program.bin \
-  WAVE=build/debug.vcd
-```
-
-只对短失败用例生成波形，避免长程序产生过大文件。
-
-### 38.6 启用 DiffTest
-
-```bash
-make -C npc run \
-  IMG=/absolute/path/program.bin \
-  DIFF="$PWD/nemu/build/riscv32-nemu-interpreter-so"
-```
-
-### 38.7 关键回归
-
-```bash
-make -C npc test-itrace
+make -C npc test-minirv
 make -C npc test-diff
-make -C npc test-delayed
+make -C npc test-itrace
 make -C npc test-bus-error
-make -C npc/tests/axi-crossbar run
-make -C npc/nvboard smoke
 ```
 
----
+运行 AM CPU tests 时，MiniRV 展开后的程序可能需要较多周期：
 
-## 39. 推荐调试顺序
-
-出现错误时，建议按以下顺序缩小问题：
-
-### 39.1 先看错误类型
-
-- `illegal instruction`：优先检查 opcode、funct3、funct7 和 RV32E 寄存器编号；
-- `bus response error`：检查地址窗口、AXI 响应和协议错误来源；
-- `DiffTest mismatch`：查看首个不一致寄存器和最近 16 条指令；
-- `memory ... out of range`：检查完整物理地址和镜像/栈范围；
-- `TIMEOUT`：检查状态机是否在等待某个永远不会到来的 ready/valid。
-
-### 39.2 开启 itrace
-
-先找到最后一条成功提交的指令，以及失败指令的 PC。
-
-### 39.3 使用最短镜像
-
-把失败程序缩短到只包含：
-
-- 必要的寄存器初始化；
-- 一条待测指令；
-- 比较结果；
-- `ebreak`。
-
-### 39.4 最后再看波形
-
-对 AXI 问题重点观察：
-
-```text
-state
-arvalid/arready/araddr
-rvalid/rready/rdata/rresp
-awvalid/awready/awaddr
-wvalid/wready/wdata/wstrb
-bvalid/bready/bresp
-core_step
-commit_valid
+```bash
+make -C am-kernels/tests/cpu-tests \
+  ARCH=minirv-npc run \
+  NPC_RUN_FLAGS='MAX_CYCLES=100000000'
 ```
 
----
+记录单个测试波形：
 
-## 40. 初学者容易混淆的概念
+```bash
+make -C am-kernels/tests/cpu-tests \
+  ARCH=minirv-npc run ALL=dummy \
+  NPC_RUN_FLAGS='MAX_CYCLES=100000 WAVE=build/dummy.vcd'
+```
 
-### 40.1 宿主机、客户程序和参考模型
+波形位于 `npc/build/dummy.vcd`。
 
-- **宿主机**：运行 C++ NPC 的本机 Linux；
-- **客户程序**：加载到 `0x80000000`、由 MiniRV 执行的 RISC-V 程序；
-- **DUT**：Verilog 实现的 MiniRV；
-- **参考模型**：NEMU；
-- **仿真时间**：Verilator 的时间戳；
-- **总线周期**：C++ 调用一次 `tick()`；
-- **客户 uptime**：MMIO 计时器提供给 AM 程序的微秒数。
+## 36. SoC 命令
 
-这些时间和执行主体不能混为一谈。
+```bash
+make -C npc/soc test-runtime
+make -C npc/soc test-gpio
+make -C npc/soc/nvboard smoke
+make -C npc/soc/nvboard test-gpio
+```
 
-### 40.2 `eval()` 不等于“执行一条指令”
+这些目标统一用 `ARCH=minirv-ysyxsoc` 生成镜像。
 
-`eval()` 只是重新计算电路。一次指令可能需要多次 `eval()` 和多个时钟周期，只有 `commit_valid` 才表示完成了一条客户指令。
+## 37. 推荐调试顺序
 
-### 40.3 DPI-C 主存不等于 CPU 直接调用 C 函数
+1. 使用最短失败测试；
+2. 查看 good/bad trap 或总线错误；
+3. 打开 `ITRACE=1`；
+4. 与 NEMU 做提交边界比较；
+5. 最后才对短时间窗口生成 VCD。
 
-CPU 请求先经过完整总线握手，只有总线最末端的平台从设备调用 DPI-C。CPU 仍然必须等待读数据或写响应。
+不要一开始就记录完整 SoC 启动波形。
 
-### 40.4 C++ 对象不是 RTL 模块
-
-- C++ 对象存在于宿主进程中；
-- RTL 模块描述硬件结构；
-- `Vtop` 是 Verilator 把 RTL 转换得到的 C++ 仿真模型；
-- DPI-C 是两边主动调用函数的桥梁。
-
----
-
-## 41. 建议练习
-
-建议按顺序做以下小练习，加深对代码的理解：
-
-1. 在 `options.cpp` 增加一个只控制日志的布尔参数；
-2. 在 `Memory::read()` 中临时打印某个指定地址的读取记录；
-3. 用内置四条指令观察 `Simulator::tick()` 和 `commit_valid` 的关系；
-4. 修改 `BUS_READ_DELAY`，比较总线周期数和指令数；
-5. 画出一条 `lw` 从 FETCH 到 LOAD_DATA 的状态转换图；
-6. 在 AXI 波形中寻找一次 AR 握手和对应 R 握手；
-7. 在 `riscv-tests` 的短测试上开启 itrace，并对照 objdump；
-8. 故意修改一条 ALU 运算，观察 DiffTest 的首个不一致和最近轨迹；完成后立即恢复修改。
-
-不要一开始修改 4×4 互联。先熟悉 `main.cpp`、`Simulator` 和 `minirv_core`，再处理协议逻辑。
-
----
-
-## 42. 文件职责速查表
+## 38. 文件职责速查
 
 ### C++
 
 | 文件 | 职责 |
-|---|---|
-| `csrc/main.cpp` | 仿真生命周期和最终退出结果 |
-| `csrc/options.cpp` | 命令行解析 |
-| `csrc/memory.cpp` | 主存和镜像加载 |
-| `csrc/device.cpp` | 串口和计时器 MMIO |
-| `csrc/runtime.cpp` | DPI-C 转发和结束事件 |
-| `csrc/simulator.cpp` | Verilator 时钟、复位、波形、提交历史 |
-| `csrc/disasm.cpp` | RV32E 调试反汇编 |
-| `csrc/difftest.cpp` | NEMU 动态加载和逐指令比较 |
+| --- | --- |
+| `csrc/main.cpp` | 编排仿真生命周期和退出状态 |
+| `csrc/options.cpp` | 解析命令行 |
+| `csrc/memory.cpp` | 镜像和物理内存 |
+| `csrc/device.cpp` | NPC 串口和计时器 |
+| `csrc/runtime.cpp` | DPI-C 转发 |
+| `csrc/simulator.cpp` | 时钟、复位、波形和提交状态 |
+| `csrc/disasm.cpp` | MiniRV/CSR 调试反汇编 |
+| `csrc/difftest.cpp` | 与 NEMU 比较提交后的架构状态 |
 
 ### RTL
 
 | 文件 | 职责 |
-|---|---|
-| `vsrc/top.sv` | 仿真平台顶层和 DPI-C 事件上报 |
-| `vsrc/minirv_core.sv` | PC、提交状态和模块连接 |
-| `vsrc/minirv_decode.sv` | 指令译码、ALU、跳转、访存语义 |
-| `vsrc/minirv_regfile.sv` | RV32E 16 个通用寄存器 |
-| `vsrc/minirv_axi_lite_master.sv` | CPU 请求到 AXI4-Lite 事务 |
-| `vsrc/axi_lite_master_to_axi4.sv` | Lite 主设备到单拍 AXI4 |
-| `vsrc/axi4_interconnect_4x4.sv` | 译码、仲裁、ID 和响应路由 |
-| `vsrc/axi4_system_interconnect.sv` | 实际连接 CPU、主存、MMIO、错误从设备 |
-| `vsrc/axi4_to_lite_slave.sv` | 单拍 AXI4 到 Lite 从设备 |
-| `vsrc/axi_lite_pmem.sv` | AXI4-Lite 平台从设备和 DPI-C |
-| `vsrc/axi4_error_slave.sv` | 未映射地址的错误响应 |
+| --- | --- |
+| `vsrc/minirv_regfile.sv` | 16 个 MiniRV 寄存器 |
+| `vsrc/minirv_decode.sv` | 8 条 MiniRV 指令、CSR 和 ebreak |
+| `vsrc/minirv_core.sv` | PC、周期和提交状态 |
+| `vsrc/minirv_axi_lite_master.sv` | NPC 总线主设备 |
+| `vsrc/axi4_interconnect_4x4.sv` | AXI 仲裁和响应路由 |
+| `vsrc/soc/minirv_simple_bus_master.sv` | SoC SimpleBus 适配 |
+| `vsrc/soc/ysyx_25100265.sv` | 正式学号顶层 |
 
----
+## 39. 当前范围
 
-## 43. 当前范围边界
-
-当前代码只覆盖 E7“接入 SoC”之前：
-
-- RV32E MiniRV；
-- 32 位数据宽度；
-- 单拍 AXI 事务；
-- 受控单 outstanding；
-- 主存、串口和 uptime 计时器；
-- 4 主 4 从互联结构；
-- NPC、DiffTest、AM 和 NVBoard 软件接入。
-
-当前尚未包含：
-
-- `ysyxSoC` 接入；
-- AXI burst；
-- cache；
-- 中断和完整异常系统；
-- Flash、SPI、PSRAM、UART 16550；
-- 综合、STA 和物理设计。
-
-阅读代码时不要把为后续保留的 AXI 字段误认为当前已经支持完整 burst。
+- `minirvEMU` 按用户要求暂缓；
+- 正式硬件不实现完整 RV32E；
+- 已完成 NPC、AM、总线和 SoC 功能接入；
+- 耗时性能评测按用户要求跳过；
+- 尚未进行真实 FPGA 和 E8 物理设计。

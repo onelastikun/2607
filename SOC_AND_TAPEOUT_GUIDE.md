@@ -1,6 +1,6 @@
 # E7 SoC 代码导读与后续流片准备
 
-更新日期：2026-09-04
+更新日期：2026-09-07
 
 本文是 `npc/README.md` 的 SoC 补充说明。前者系统讲解 NPC 的 C++ 仿真器和
 MiniRV/AXI 代码；本文重点解释新加入的 ysyxSoC 仿真、AM 平台、GPIO、NVBoard，
@@ -15,6 +15,7 @@ MiniRV/AXI 代码；本文重点解释新加入的 ysyxSoC 仿真、AM 平台、
 
 已经完成 E7 的功能实现：
 
+- CPU 只实现 8 条 MiniRV 指令，以及 E7 要求的只读 CSR 和仿真 `ebreak`；
 - CPU 从 SoC 的 `0x30000000` SPI XIP 地址启动；
 - 官方 bootloader 从 Flash 中找到 ELF，并把可加载段搬到 `0x80000000` PSRAM；
 - CPU 在 PSRAM 中运行 AM 程序；
@@ -25,7 +26,7 @@ MiniRV/AXI 代码；本文重点解释新加入的 ysyxSoC 仿真、AM 平台、
 - NVBoard 已连接 GPIO、数码管和 UART；
 - 仿真 DPI 已由 `SYNTHESIS` 宏隔离，不进入综合网表。
 
-按用户要求，没有执行耗时的 SoC MicroBench、archbench、频率扫描和性能优化评测。
+按用户要求，`minirvEMU` 暂缓，也没有执行耗时的 SoC MicroBench、archbench、频率扫描和性能优化评测。
 这不影响当前功能结论，但不能把“功能通过”写成“性能达标”。
 
 ## 2. SoC RTL 分层
@@ -180,12 +181,11 @@ UART。NVBoard 版本同时连接真实串行 TX 引脚，因此软件终端和�
 
 ## 4. AM 的 `minirv-ysyxsoc`
 
-新增两种架构：
+SoC AM 程序只使用讲义规定的 `minirv-ysyxsoc`。MiniRV 工具先借助 RV32E ABI
+编译 C 程序，再把复杂指令展开为 8 条 MiniRV 指令的组合。这里的 RV32E 仅表示
+16 寄存器 ABI，不表示硬件支持完整 RV32E。
 
-- `minirv-ysyxsoc`：通过 MiniRV 工具把复杂指令展开为最小指令集合；
-- `riscv32e-ysyxsoc`：直接生成 RV32E 指令，镜像小，适合快速回归。
-
-两者都链接到 `0x80000000`。`platform/ysyxsoc.mk` 不直接把裸 bin 交给 SoC，而是：
+程序链接到 `0x80000000`。`platform/ysyxsoc.mk` 不直接把裸 bin 交给 SoC，而是：
 
 1. 复制 ELF；
 2. 向 ELF 副本写入 `mainargs`；
@@ -206,7 +206,7 @@ AM uptime 连续读取 `mcycleh/mcycle/mcycleh`，只有两次高位相等时才
 ```bash
 source .envrc
 
-# NPC 架构状态与 NEMU 逐指令一致
+# MiniRV 架构状态与 NEMU 逐指令一致
 make -C npc test-diff
 
 # SoC CSR、UART、mcycle 和 AM uptime
@@ -233,7 +233,7 @@ make -C npc/soc test-hello
 
 流片不是只提交“能过测试”的目录。你至少应能说明：
 
-- 每类 RV32E 指令如何生成立即数、写回值和下一 PC；
+- 8 条 MiniRV 指令如何生成立即数、写回值和下一 PC；
 - load/store 的字节 lane、符号扩展和写掩码；
 - AXI/SimpleBus 为什么必须等待响应；
 - Flash boot、PSRAM 搬运和 AM 链接地址的关系；
