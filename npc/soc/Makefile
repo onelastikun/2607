@@ -97,6 +97,16 @@ test-hello: $(BIN)
 		printf '%s\n' "$$output" | grep -q 'Hello, AbstractMachine!'; \
 		printf '%s\n' "$$output" | grep -q 'SoC GOOD TRAP'
 
+
+test-sigint: $(BIN)
+	@set +e; \
+		SDL_VIDEODRIVER=dummy $(BIN) --image $(abspath $(IMG)) --max-cycles 0 \
+			>$(BUILD_DIR)/sigint.log 2>&1 & pid=$$!; \
+		sleep 1; kill -INT $$pid; wait $$pid; status=$$?; set -e; \
+		cat $(BUILD_DIR)/sigint.log; \
+		test $$status -eq 130; \
+		grep -q '收到 Ctrl-C' $(BUILD_DIR)/sigint.log
+
 # smoke 只检查统一后的 NVBoard/SoC 可执行文件能够完成构建。
 smoke: $(BIN)
 	@echo 'PASS: ysyxSoC NVBoard simulator built'
@@ -104,4 +114,4 @@ smoke: $(BIN)
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-runtime test-gpio test-hello smoke clean
+.PHONY: all run test-runtime test-gpio test-hello test-sigint smoke clean

@@ -26,7 +26,8 @@ make -C am-kernels/tests/am-tests ARCH=minirv-ysyxsoc mainargs=t
 ```
 
 不写目标时会自动完成编译、Flash 打包并打开 NVBoard。程序 good trap 后会保留最后的
-LED 和数码管状态，关闭 NVBoard 窗口即可退出。
+LED 和数码管状态。关闭 NVBoard 窗口或按 `Ctrl-C` 均可退出；`Ctrl-C` 会先关闭
+VCD、NVBoard 和 Verilator，再以状态码 130 结束。
 
 也可以直接运行指定镜像：
 
@@ -84,3 +85,13 @@ make -C npc/soc test-gpio
 
 仿真器会输出最终 `gpio_out`、反向解码得到的 `gpio_digits` 和 LED 变化次数，避免
 只检查软件是否 good trap、却遗漏 APB 外设和引脚实际没有变化的问题。
+
+## Ctrl-C 回归
+
+```bash
+source .envrc
+make -C npc/soc test-sigint
+```
+
+信号处理函数只设置退出标志，资源清理由正常的 C++ 析构流程完成，避免在异步信号
+上下文中调用 SDL、iostream 或 Verilator。

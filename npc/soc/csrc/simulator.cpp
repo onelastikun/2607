@@ -114,12 +114,10 @@ std::uint32_t Simulator::gpio_digits() const {
   return result;
 }
 
-[[noreturn]] void Simulator::wait_for_nvboard_close() {
-  // 程序结束后保留最后的 LED/数码管状态，用户关闭窗口时 NVBoard 会结束进程。
-  while (true) {
-    nvboard_update();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+void Simulator::idle_nvboard() {
+  // 程序结束后继续刷新界面；循环由 main 控制，便于响应 Ctrl-C 并正常析构。
+  if (nvboard_enabled_) nvboard_update();
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
 }
 
 }  // 命名空间 npc::soc

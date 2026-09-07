@@ -24,7 +24,7 @@ class Simulator {
   std::uint32_t gpio_digits() const;
   std::uint64_t gpio_change_count() const { return gpio_change_count_; }
   bool nvboard_enabled() const { return nvboard_enabled_; }
-  [[noreturn]] void wait_for_nvboard_close();
+  void idle_nvboard();
 
  private:
   void evaluate();

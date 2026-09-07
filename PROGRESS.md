@@ -119,6 +119,7 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 - 自动回归通过 `--headless` 复用同一个可执行文件；
 - `MAX_CYCLES=0` 表示交互运行不设超时；
 - good trap 后保留最后的 LED/数码管状态，直到用户关闭窗口。
+- 支持捕获 `Ctrl-C`，正常关闭 VCD、NVBoard 和 Verilator，并返回状态码 130。
 
 ## 当前限制
 

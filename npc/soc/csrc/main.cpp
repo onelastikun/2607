@@ -1,6 +1,7 @@
 // ysyxSoC 仿真入口：装载 Flash 镜像、驱动双时钟并汇总 CPU 退出状态。
 #include <verilated.h>
 
+#include <csignal>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -11,10 +12,22 @@
 #include "simulator.h"
 #include "types.h"
 
+namespace {
+
+// 信号处理函数只能设置简单标志，不能在异步上下文中操作 iostream、SDL 或 Verilator。
+volatile std::sig_atomic_t g_stop_requested = 0;
+
+void handle_sigint(int) {
+  g_stop_requested = 1;
+}
+
+constexpr int kSigintExitCode = 128 + SIGINT;
+
+}  // 匿名命名空间
+
 int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
   const auto options = npc::soc::parse_options(argc, argv);
-
   try {
     npc::soc::FlashImage flash;
     flash.load(options.image_path);
@@ -23,12 +36,22 @@ int main(int argc, char **argv) {
 
     std::cout << "loaded SoC flash image: " << flash.size() << " bytes\n";
     npc::soc::Simulator simulator(options);
+    // SDL/NVBoard 初始化可能修改进程信号处理器，因此必须在构造完成后注册。
+    if (std::signal(SIGINT, handle_sigint) == SIG_ERR) {
+      std::cerr << "fatal: 无法注册 Ctrl-C 信号处理函数\n";
+      return EXIT_FAILURE;
+    }
     simulator.reset();
 
-    while (!state.halted && !state.aborted &&
+    while (!g_stop_requested && !state.halted && !state.aborted &&
            (options.max_cpu_cycles == 0 ||
             simulator.cpu_cycles() < options.max_cpu_cycles)) {
       simulator.step();
+    }
+
+    if (g_stop_requested) {
+      std::cerr << "\n收到 Ctrl-C，正在关闭波形、NVBoard 和 Verilator。\n";
+      return kSigintExitCode;
     }
 
     if (state.aborted) {
@@ -61,8 +84,10 @@ int main(int argc, char **argv) {
               << ", gpio_changes=" << std::dec << simulator.gpio_change_count()
               << '\n';
     if (simulator.nvboard_enabled()) {
-      std::cout << "程序已结束，关闭 NVBoard 窗口退出。\n";
-      simulator.wait_for_nvboard_close();
+      std::cout << "程序已结束，关闭 NVBoard 窗口或按 Ctrl-C 退出。\n";
+      while (!g_stop_requested) simulator.idle_nvboard();
+      std::cerr << "\n收到 Ctrl-C，正在关闭波形、NVBoard 和 Verilator。\n";
+      return kSigintExitCode;
     }
     return EXIT_SUCCESS;
   } catch (const std::exception &error) {
