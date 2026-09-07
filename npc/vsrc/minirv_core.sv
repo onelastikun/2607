@@ -42,7 +42,7 @@ module minirv_core #(
   logic [3:0]  rs2_idx;
   logic [3:0]  rd_idx;
 
-  // RV32E 只允许 x0~x15，因此这里只取寄存器编号的低 4 位；
+  // MiniRV 沿用 RV32E 的 x0~x15，因此这里只取寄存器编号的低 4 位；
   // 编号最高位是否合法由 minirv_decode 单独检查，不能仅靠截断忽略。
   assign pc = pc_reg;
   assign inst = imem_rdata;

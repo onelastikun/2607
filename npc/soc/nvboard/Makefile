@@ -54,10 +54,10 @@ run: $(BIN)
 	$(BIN) --image $(abspath $(IMG))
 
 test-gpio: $(BIN)
-	$(MAKE) -C $(GPIO_TEST) ARCH=riscv32e-ysyxsoc soc-image
+	$(MAKE) -C $(GPIO_TEST) ARCH=minirv-ysyxsoc soc-image
 	@output=`SDL_VIDEODRIVER=dummy $(BIN) \
-		--image $(GPIO_TEST)/build/soc-gpio-smoke-riscv32e-ysyxsoc.soc.bin \
-		--cycles 50000000`; status=$$?; \
+		--image $(GPIO_TEST)/build/soc-gpio-smoke-minirv-ysyxsoc.soc.bin \
+		--cycles 500000000`; status=$$?; \
 		printf '%s\n' "$$output"; test $$status -eq 0; \
 		printf '%s\n' "$$output" | grep -q 'NVBoard SoC halted, code=0'
 

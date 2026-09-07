@@ -34,10 +34,11 @@ module nvboard_memory #(
   // 内置程序不断执行 x1=x1+1，便于从 LED/数码管观察核心持续运行。
   initial begin
     for (i = 0; i < SIZE; i = i + 1) memory[i] = 8'd0;
-    // 依次为：x1=0；x1=x1+1；跳回上一条指令。
-    {memory[3], memory[2], memory[1], memory[0]} = 32'h0000_0093;
-    {memory[7], memory[6], memory[5], memory[4]} = 32'h0010_8093;
-    {memory[11], memory[10], memory[9], memory[8]} = 32'hffdff06f;
+    // 只使用 MiniRV 指令：先构造基地址，再让 x1 递增并通过 JALR 回到循环体。
+    {memory[3], memory[2], memory[1], memory[0]} = 32'h8000_0137;  // lui x2,0x80000
+    {memory[7], memory[6], memory[5], memory[4]} = 32'h0000_0093;  // addi x1,x0,0
+    {memory[11], memory[10], memory[9], memory[8]} = 32'h0010_8093; // addi x1,x1,1
+    {memory[15], memory[14], memory[13], memory[12]} = 32'h0081_0067; // jalr x0,8(x2)
   end
 
   // 写掩码每一位控制一个字节，行为与 NPC 主存总线一致。

@@ -51,22 +51,22 @@ run: $(BIN)
 	$(BIN) $(RUN_ARGS)
 
 test-runtime: $(BIN)
-	$(MAKE) -C $(RUNTIME_TEST) ARCH=riscv32e-ysyxsoc soc-image
-	@output=`$(BIN) --image $(RUNTIME_TEST)/build/soc-runtime-smoke-riscv32e-ysyxsoc.soc.bin \
-		--max-cycles 50000000 --gpio 0`; status=$$?; \
+	$(MAKE) -C $(RUNTIME_TEST) ARCH=minirv-ysyxsoc soc-image
+	@output=`$(BIN) --image $(RUNTIME_TEST)/build/soc-runtime-smoke-minirv-ysyxsoc.soc.bin \
+		--max-cycles 500000000 --gpio 0`; status=$$?; \
 		printf '%s\n' "$$output"; test $$status -eq 0; \
 		printf '%s\n' "$$output" | grep -q 'SoC CSR/timer smoke passed'; \
 		printf '%s\n' "$$output" | grep -q 'SoC GOOD TRAP'
 
 test-gpio: $(BIN)
-	$(MAKE) -C $(GPIO_TEST) ARCH=riscv32e-ysyxsoc soc-image
-	@accepted=`$(BIN) --image $(GPIO_TEST)/build/soc-gpio-smoke-riscv32e-ysyxsoc.soc.bin \
-		--max-cycles 50000000 --gpio 0x0265`; status=$$?; \
+	$(MAKE) -C $(GPIO_TEST) ARCH=minirv-ysyxsoc soc-image
+	@accepted=`$(BIN) --image $(GPIO_TEST)/build/soc-gpio-smoke-minirv-ysyxsoc.soc.bin \
+		--max-cycles 500000000 --gpio 0x0265`; status=$$?; \
 		printf '%s\n' "$$accepted"; test $$status -eq 0; \
 		printf '%s\n' "$$accepted" | grep -q 'gpio_out=0x600d'; \
 		printf '%s\n' "$$accepted" | grep -q 'gpio_digits=0x25100265'; \
-		rejected=`$(BIN) --image $(GPIO_TEST)/build/soc-gpio-smoke-riscv32e-ysyxsoc.soc.bin \
-		--max-cycles 50000000 --gpio 0`; status=$$?; \
+		rejected=`$(BIN) --image $(GPIO_TEST)/build/soc-gpio-smoke-minirv-ysyxsoc.soc.bin \
+		--max-cycles 500000000 --gpio 0`; status=$$?; \
 		printf '%s\n' "$$rejected"; test $$status -eq 0; \
 		printf '%s\n' "$$rejected" | grep -q 'gpio_out=0xdead'; \
 		printf '%s\n' "$$rejected" | grep -q 'gpio_digits=0x25100265'

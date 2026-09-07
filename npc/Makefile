@@ -4,8 +4,8 @@ OBJ_DIR       := $(BUILD_DIR)/obj_dir
 DELAY_OBJ_DIR := $(BUILD_DIR)/delay_obj_dir
 BIN           := $(OBJ_DIR)/V$(TOPNAME)
 DELAY_BIN     := $(DELAY_OBJ_DIR)/V$(TOPNAME)
-DIRECTED_ELF  := $(BUILD_DIR)/rv32e-directed.elf
-DIRECTED_BIN  := $(BUILD_DIR)/rv32e-directed.bin
+DIRECTED_ELF  := $(BUILD_DIR)/minirv-directed.elf
+DIRECTED_BIN  := $(BUILD_DIR)/minirv-directed.bin
 BUS_ERROR_ELF := $(BUILD_DIR)/bus-error.elf
 BUS_ERROR_BIN := $(BUILD_DIR)/bus-error.bin
 VERILATOR     ?= verilator
@@ -57,7 +57,7 @@ $(DELAY_BIN): $(VSRCS) $(CSRCS) Makefile
 run: $(BIN)
 	$(BIN) $(RUN_ARGS)
 
-$(DIRECTED_ELF): tests/rv32e-directed.S tests/linker.ld
+$(DIRECTED_ELF): tests/minirv-directed.S tests/linker.ld
 	@mkdir -p $(BUILD_DIR)
 	$(RISCV_CC) -march=rv32e_zicsr -mabi=ilp32e -fno-pic -fno-pie \
 		-nostdlib -nostartfiles -static -mno-relax -Wl,--build-id=none \
@@ -75,7 +75,7 @@ $(BUS_ERROR_ELF): tests/bus-error.S tests/linker.ld
 $(BUS_ERROR_BIN): $(BUS_ERROR_ELF)
 	$(RISCV_OBJCOPY) -O binary $< $@
 
-test-rv32e: $(BIN) $(DIRECTED_BIN)
+test-minirv: $(BIN) $(DIRECTED_BIN)
 	$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 $(if $(filter-out 0,$(ITRACE)),--itrace)
 
 test-diff: $(BIN) $(DIRECTED_BIN)
@@ -89,9 +89,10 @@ test-delayed: $(DELAY_BIN) $(DIRECTED_BIN)
 
 test-itrace: $(BIN) $(DIRECTED_BIN)
 	@output=`$(BIN) --image $(DIRECTED_BIN) --max-cycles 1000 --itrace`; \
-		status=$$?; printf '%s\n' "$$output"; test $$status -eq 0; \
+		status=$$?; printf '%s\n' "$$output"; test $$status -eq 0 && \
 		printf '%s\n' "$$output" | grep -q \
-		  '0x80000000: 0x00000513  addi x10, x0, 0'; \
+		  '0x80000000: 0x800000b7  lui x1, 0x80000' && \
+		printf '%s\n' "$$output" | grep -q 'jalr x6' && \
 		printf '%s\n' "$$output" | grep -q 'ebreak'
 
 test-bus-error: $(BIN) $(BUS_ERROR_BIN)
@@ -108,6 +109,6 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-rv32e test-diff test-delayed test-itrace test-bus-error sim clean
+.PHONY: all run test-minirv test-diff test-delayed test-itrace test-bus-error sim clean
 
 include ../Makefile
