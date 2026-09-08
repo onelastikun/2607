@@ -1,340 +1,626 @@
-# E7 SoC 代码导读与后续流片准备
+# MiniRV 项目框架与流片准备指南
 
-更新日期：2026-09-07
+更新日期：2026-09-08
 
-本文是 `npc/README.md` 的 SoC 补充说明。前者系统讲解 NPC 的 C++ 仿真器和
-MiniRV/SimpleBus 代码；本文重点解释新加入的 ysyxSoC 仿真、AM 平台、GPIO、NVBoard，
-以及后续参加流片前需要由你亲自完成和确认的工作。
+本文用于两件事：
 
-官方讲义：
+1. 帮助只熟悉 C 语言的读者快速理解当前 MiniRV/NPC/ysyxSoC 项目；
+2. 按“一生一芯”v26.07 当前讲义整理从功能检查、综合、网表仿真到后端物理设计的后续路线。
 
+本文只记录和解释流程。当前仓库尚未实际执行 E8 的 ECC 综合、四值仿真、网表仿真、
+ECOS Studio 后端设计和签核，不能把本文当成已经通过流片验收的证明。
+
+更详细的 NPC C++ 入门说明见 [`npc/README.md`](npc/README.md)，实际进度见
+[`PROGRESS.md`](PROGRESS.md)。
+
+---
+
+## 1. 先看讲义的哪些位置
+
+| 目的 | 讲义位置 | 你要重点理解的内容 |
+| --- | --- | --- |
+| 理解 CPU 如何接入 SoC | E7“接入 SoC” | SimpleBus、ysyxSoC、Flash 启动和 PSRAM |
+| 理解 UART/GPIO/CSR | E7“访问真实的串口控制器”“接入 NVBoard”“添加简单的控制状态寄存器” | UART、GPIO、`mvendorid/marchid/mcycle` |
+| 学习综合 | E6“性能评测入门”→“通过 EDA 工具评估 NPC 的频率” | ECC、Yosys、ICsprout55 PDK、综合报告和网表 |
+| 做流片前 RTL 检查 | E8“前端准备工作” | 地址空间、下降沿、锁存器、lint、复位和四值仿真 |
+| 验证综合网表 | E8“网表仿真” | `_sim` 网表、标准单元行为模型、Verilator/iverilog |
+| 做后端物理设计 | E8“后端物理设计” | ECOS Studio、Floorplan、签核包 |
+| 申请答辩 | E9“提交入学答辩申请” | 当期必做题、材料和申请要求 |
+
+官方页面：
+
+- E6：`https://ysyx.oscc.cc/docs/2607/e/6.html`
 - E7：`https://ysyx.oscc.cc/docs/2607/e/7.html`
 - E8：`https://ysyx.oscc.cc/docs/2607/e/8.html`
+- E9：`https://ysyx.oscc.cc/docs/2607/e/9.html`
 
-## 1. 当前完成到了哪里
+**最容易误解的一点：综合是在 E6 中讲的。** E8 开头默认你已经使用 ECC 完成 NPC
+综合并获得网表，然后才继续做网表检查和后端物理设计。
 
-已经完成 E7 的功能实现：
+讲义及工具版本可能更新。开始综合或报名之前，应再次核对官网和当期通知，不能只照抄
+本文中的日期和版本。
 
-- CPU 只实现 8 条 MiniRV 指令，以及 E7 要求的只读 CSR 和仿真 `ebreak`；
-- CPU 从 SoC 的 `0x30000000` SPI XIP 地址启动；
-- 官方 bootloader 从 Flash 中找到 ELF，并把可加载段搬到 `0x80000000` PSRAM；
-- CPU 在 PSRAM 中运行 AM 程序；
-- UART 16550 可初始化并输出；
-- `mvendorid`、`marchid`、`mcycle/mcycleh` 可读；
-- AM uptime 由 `mcycle` 换算；
-- GPIO 支持 LED 输出、拨码输入和 8 位十六进制数码管；
-- NVBoard 已连接 GPIO、数码管和 UART；
-- 仿真 DPI 已由 `SYNTHESIS` 宏隔离，不进入综合网表。
+---
 
-按用户要求，`minirvEMU` 暂缓，也没有执行耗时的 SoC MicroBench、archbench、频率扫描和性能优化评测。
-这不影响当前功能结论，但不能把“功能通过”写成“性能达标”。
+## 2. 当前项目到底实现了什么
 
-## 2. SoC RTL 分层
-
-### 2.1 `ysyx_25100265.sv`
-
-这是正式学号命名的 CPU 顶层，职责只有三项：
-
-1. 实例化已经验证过的 `minirv_core`；
-2. 实例化 SimpleBus 主设备适配器；
-3. 在非综合仿真中把提交、非法指令和 `ebreak` 通知 C++。
-
-复位向量改为 `0x30000000`，因为接入 SoC 后第一条指令不再来自 NPC 主存，而是来自
-SPI Flash XIP 窗口。`MARCHID` 默认值是十进制 `25100265`。
-
-DPI 代码位于：
-
-```systemverilog
-`ifndef SYNTHESIS
-  // import 和回调
-`endif
-```
-
-这样 Verilator 可以观察 good trap，而综合工具定义 `SYNTHESIS` 后只看到纯硬件逻辑。
-后续提交 RTL 给综合流程时，要继续保持这个边界，不能让文件 I/O、DPI 或测试路径进入
-CPU 的可综合部分。
-
-### 2.2 `minirv_simple_bus_master.sv`
-
-核心原来的接口近似“请求后马上得到数据”，SoC 的 SimpleBus 则是：
-
-- 主设备发出一个请求脉冲；
-- 从设备可能等待很多周期；
-- 完成时返回 `respValid` 和读数据。
-
-适配器使用六个简单状态：
+正式硬件只实现讲义规定的 8 条 MiniRV 指令：
 
 ```text
-FETCH_REQ  -> FETCH_RESP
-LOAD_REQ   -> LOAD_RESP
-STORE_REQ  -> STORE_RESP
+add  addi  lui  lw  lbu  sw  sb  jalr
 ```
 
-只有收到对应 `respValid` 才让 `core_step=1`，因此 Flash、PSRAM、APB 外设无论等待
-多少周期，CPU 都不会提前提交指令。
+为了完成后续章节，还保留：
 
-对于非对齐到 32 位数据通道低位的字节/半字访问，适配器根据地址低两位移动写数据、
-写掩码和读响应。这是“地址中的字节位置”和“总线字节 lane”之间的转换，不是改变
-程序的小端序语义。
+- `ebreak`：仿真环境用它取得 AM 程序退出码；
+- `CSRRS rd, csr, x0`：只用于读取 `mvendorid`、`marchid`、`mcycle/mcycleh` 和
+  `cycle/cycleh`。
 
-### 2.3 `mygpio_top_apb.sv`
+MiniRV 使用 RV32E 的 16 个通用寄存器，即 `x0~x15`。AM 编译时出现
+`-march=rv32e_zicsr -mabi=ilp32e`，主要是为了使用 16 寄存器 ABI；复杂指令会由
+MiniRV 工具展开成上述 8 条基础指令，并不代表 RTL 实现了完整 RV32E。
 
-GPIO 是独立 APB 从设备，寄存器如下：
+当前已经形成的功能闭环是：
 
-| 偏移 | 方向 | 说明 |
-| ---: | :---: | --- |
-| `0x0` | 读写 | 低 16 位连接 LED/GPIO 输出 |
-| `0x4` | 只读 | 低 16 位连接拨码/GPIO 输入 |
-| `0x8` | 读写 | 8 个 4 位十六进制数字 |
+- NPC：MiniRV、SimpleBus、主存/MMIO、itrace、DiffTest、good/bad trap；
+- AM：`minirv-npc` 和 `minirv-ysyxsoc`；
+- SoC：SPI Flash XIP、bootloader、PSRAM、UART 16550、GPIO、CSR/计时；
+- NVBoard：默认由统一的 `npc/soc` 仿真入口打开；
+- 退出：SoC 仿真支持关闭窗口和 `Ctrl-C` 清理资源后退出。
 
-APB 访问只在 `PSEL && PENABLE` 的 access 阶段完成；写入尊重 `PSTRB` 字节掩码。
-数码管寄存器保存的是 8 个十六进制数位，组合译码函数再生成 8 路段码。状态寄存器
-只在时钟沿更新，读数据和段码均为组合逻辑。
+没有完成的部分：
 
-## 3. SoC C++ 代码导读（面向只熟悉 C 的读者）
+- `minirvEMU`；
+- 真实 FPGA 板上验证；
+- 按用户要求跳过的耗时 SoC 性能评测；
+- E8 的 ECC 综合、iverilog 四值仿真、网表仿真、物理设计和签核。
 
-目录：`npc/soc/csrc/`。该目录现在同时负责 SoC 和 NVBoard，不再有嵌套的第二套入口。
+---
 
-### 3.1 先把 C++ 看成“带资源自动管理的 C”
+## 3. 从程序到 CPU 的整体框架
 
-本目录没有模板元编程、继承框架或复杂运算符重载，只使用了几项基础 C++ 能力：
+### 3.1 软件构建路径
 
-- `namespace npc::soc`：相当于给函数名统一加前缀，防止重名；
-- `class`：把数据和操作这些数据的函数放在一起；
-- 构造函数：对象创建时完成初始化；
-- 析构函数：离开作用域时自动释放波形和 DUT；
-- `std::unique_ptr<T>`：只能有一个所有者的指针，析构时自动 `delete`；
-- `std::string`：自动管理长度和内存的字符串；
-- `std::array<T, N>`：固定长度数组，大小仍在编译期确定；
-- `try/catch`：把文件读取、越界等错误统一交给入口处理。
-
-读代码时可以把：
-
-```cpp
-npc::soc::Simulator simulator(options);
+```text
+AM/C 程序
+   │
+   │  RV32E ABI 编译 + MiniRV 工具展开
+   ▼
+MiniRV ELF
+   ├──────────────────────────┐
+   │                          │
+   │ minirv-npc               │ minirv-ysyxsoc
+   ▼                          ▼
+裸二进制 .bin             ELF 写入 Flash 模板
+   │                          │
+   ▼                          ▼
+NPC 主存模型              .soc.bin SPI Flash 镜像
 ```
 
-理解为 C 风格的：
+### 3.2 NPC 功能验证路径
 
-```c
-Simulator simulator;
-simulator_init(&simulator, &options);
+```text
+npc/vsrc/top.sv
+  ├─ minirv_core
+  │    ├─ minirv_decode
+  │    └─ minirv_regfile
+  ├─ minirv_simple_bus_master
+  └─ simple_bus_pmem
+       └─ DPI-C → C++ Memory/DeviceMap
 ```
 
-区别是 C++ 构造函数自动执行初始化，作用域结束时析构函数又自动清理资源。
+NPC 路径的作用是快速验证 CPU：镜像直接装入宿主机主存数组，不需要经过 SPI Flash
+boot，因此运行速度比完整 SoC 仿真快得多。DiffTest、itrace 和总线延迟测试都优先在
+这条路径完成。
 
-### 3.2 `main.cpp`：只负责编排
+### 3.3 ysyxSoC 功能路径
 
-主流程依次执行：
-
-1. 解析参数；
-2. 读取 Flash 镜像；
-3. 绑定 DPI 运行时状态；
-4. 创建仿真器并复位；
-5. 循环推进时钟；
-6. 根据 abort、timeout、bad trap 或 good trap 返回不同状态。
-
-`main` 不解析 SPI、不实现 GPIO，也不直接操作 Verilator 内部状态。这样出错时可以按
-模块定位，而不是在一个超长函数里混合调试。
-
-### 3.3 `FlashImage`：封装 Flash 文件
-
-`flash_image.cpp` 把二进制文件读入 `std::vector<uint8_t>`。可以把 vector 理解成会
-自动扩容和释放的字节数组。`read_word()` 检查地址和长度，再按小端序组合 32 位数据。
-
-RTL Flash 模型调用 C 函数：
-
-```cpp
-extern "C" void flash_read(int address, int *data);
+```text
+SimTop（官方 ysyxSoC 仿真顶层）
+  └─ NPC.sv（只解决官方固定模块名）
+       └─ ysyx_25100265（正式 CPU 顶层）
+            ├─ minirv_core
+            │    ├─ minirv_decode
+            │    └─ minirv_regfile
+            └─ minirv_simple_bus_master
+                 └─ SimpleBus → 官方 ysyxSoC
+                      ├─ SPI Flash
+                      ├─ PSRAM
+                      ├─ UART 16550
+                      └─ APB GPIO
 ```
 
-`extern "C"` 的意思不是“函数用 C 编写”，而是要求编译器使用 C 的符号命名规则，
-这样 SystemVerilog DPI 才能按固定名字找到它。
+C++ 和 NVBoard 位于整个 SoC RTL 的外面，只负责加载 Flash 镜像、驱动时钟、显示引脚、
+记录波形和处理仿真退出。它们不是 CPU，也不能进入综合文件列表。
 
-### 3.4 `RunState` 与 DPI 回调
+---
 
-`RunState` 是普通结构体，保存：
+## 4. 目录和模块职责
 
-- 是否 halt/abort；
-- 退出码和 PC；
-- 最近提交指令；
-- 指令总数；
-- UART 输出。
+### 4.1 CPU RTL
 
-`runtime.cpp` 中的全局指针只负责让 DPI 的 C 接口找到当前仿真对象。CPU 调用
-`npc_commit()`、`npc_ebreak()`、`npc_abort()` 后，只更新 `RunState`，真正的退出策略
-仍由 `main.cpp` 决定。
+| 文件 | 作用 | 是否属于正式 NPC 综合输入 |
+| --- | --- | :---: |
+| `npc/vsrc/minirv_regfile.sv` | 16 个通用寄存器，组合读、上升沿写回，`x0` 恒为 0 | 是 |
+| `npc/vsrc/minirv_decode.sv` | 8 条指令、只读 CSR、立即数、访存控制和下一 PC | 是 |
+| `npc/vsrc/minirv_core.sv` | 保存 PC、周期数和提交状态，用 `step` 控制提交 | 是 |
+| `npc/vsrc/soc/minirv_simple_bus_master.sv` | 将核心取指/访存请求转换为 SimpleBus 请求/响应状态机 | 是 |
+| `npc/vsrc/soc/ysyx_25100265.sv` | 学号命名的正式 CPU 顶层，复位地址 `0x30000000` | 是，且是顶层 |
+| `npc/vsrc/soc/NPC.sv` | 适配官方 ready-to-run 文件所要求的固定模块名 `NPC` | 否 |
+| `npc/vsrc/top.sv` | NPC Verilator 测试顶层，含仿真 DPI | 否 |
+| `npc/vsrc/simple_bus_pmem.sv` | NPC 主存/MMIO 行为模型，含 DPI-C | 否 |
 
-### 3.5 `Simulator`：双时钟和可观测性
+**正式综合对象是 `ysyx_25100265`，不是 `top`、`NPC` 或 `SimTop`。**
 
-`Simulator::step()` 每个仿真时间量翻转 CPU 时钟，每两个时间量翻转 SoC 时钟，所以
-CPU:SoC 为 2:1。只有 CPU 时钟变高时才累计一个 CPU 周期。
+### 4.2 SoC 仿真专用部分
 
-仿真器还观察 GPIO 输出变化，并把 8 路段码反向解码为 32 位十六进制数。这样测试能
-确认“APB 事务真的到达 GPIO 引脚”，而不是只看软件最后执行了 `ebreak`。
+| 路径 | 作用 | 是否综合进个人 NPC |
+| --- | --- | :---: |
+| `ysyxSoC/` | 官方 SoC、Flash/PSRAM/UART 和总线结构 | 否 |
+| `npc/soc/vsrc/mygpio_top_apb.sv` | E7 GPIO 作业在当前仿真中的 overlay 实现 | 否 |
+| `npc/soc/vsrc/uart_apb_monitor.sv` | 旁路观察 UART APB 写事务并打印字符 | 否 |
+| `npc/soc/constr/SimTop.nxdc` | NVBoard 仿真引脚绑定 | 否 |
+| `npc/soc/csrc/` | SoC/NVBoard C++ 仿真器 | 否 |
 
-### 3.6 为什么 UART 还有一个 APB monitor
+E8 当前流程只要求对个人 NPC 进行综合和后端物理设计。流片所用 SoC 由项目方提供，
+所以不要把 ysyxSoC、GPIO、NVBoard 或 UART monitor 合入个人 NPC 网表。
 
-`uart_apb_monitor.sv` 通过 `bind` 旁路观察已经到达 16550 的 APB 写事务，并调用
-`soc_uart_write()` 把字符打印到宿主终端。它不产生 ready、不修改寄存器，也不替代
-UART。NVBoard 版本同时连接真实串行 TX 引脚，因此软件终端和引脚路径可以分别验证。
+### 4.3 AM 平台
 
-## 4. AM 的 `minirv-ysyxsoc`
+| 文件 | 作用 |
+| --- | --- |
+| `abstract-machine/scripts/minirv-ysyxsoc.mk` | 组合 MiniRV ISA 和 ysyxSoC 平台，并把默认目标设为 `run` |
+| `abstract-machine/scripts/platform/ysyxsoc.mk` | 链接到 PSRAM、插入 `mainargs`、生成 Flash 镜像并调用 SoC 仿真器 |
+| `abstract-machine/am/src/riscv/ysyxsoc/trm.c` | UART 初始化、`putch()` 和 `halt()` |
+| `abstract-machine/am/src/riscv/ysyxsoc/timer.c` | 读取 `mcycle/mcycleh` 并换算 AM uptime |
+| `abstract-machine/am/src/riscv/ysyxsoc/ioe.c` | 注册 AM 设备访问处理函数 |
 
-SoC AM 程序只使用讲义规定的 `minirv-ysyxsoc`。MiniRV 工具先借助 RV32E ABI
-编译 C 程序，再把复杂指令展开为 8 条 MiniRV 指令的组合。这里的 RV32E 仅表示
-16 寄存器 ABI，不表示硬件支持完整 RV32E。
+---
 
-程序链接到 `0x80000000`。`platform/ysyxsoc.mk` 不直接把裸 bin 交给 SoC，而是：
+## 5. 一条指令是怎样执行的
 
-1. 复制 ELF；
-2. 向 ELF 副本写入 `mainargs`；
-3. 调用官方 `ready-to-run/minirv/gen.sh`；
-4. 把 ELF 放入 Flash 模板固定偏移；
-5. 运行时由 bootloader 解析 ELF program header 并搬到 PSRAM。
+### 5.1 普通计算指令
 
-UART 运行时初始化 16550 的 DLAB、除数、8N1、FIFO 和中断使能。`putch()` 轮询
-LSR[5]，确认发送保持寄存器为空后才写字符。
+```text
+FETCH_REQ：IFU 发出 reqValid 和 PC
+    ↓
+FETCH_RESP：等待 io_ifu_respValid
+    ↓
+译码 ADD/ADDI/LUI/JALR/CSR/EBREAK
+    ↓
+core_step=1
+    ↓
+时钟上升沿更新 PC、寄存器和提交计数
+```
 
-AM uptime 连续读取 `mcycleh/mcycle/mcycleh`，只有两次高位相等时才接受结果，避免
-32 位 CPU 在低 32 位回绕时得到不一致的 64 位值。
+### 5.2 Load/Store
 
-## 5. 常用短回归
+```text
+取指响应到达
+    ↓
+译码产生地址、读写方向、数据和掩码
+    ↓
+LOAD_REQ/STORE_REQ 发出 LSU reqValid
+    ↓
+LOAD_RESP/STORE_RESP 等待 io_lsu_respValid
+    ↓
+core_step=1，完成写回或确认写事务结束
+```
 
-从仓库根目录执行：
+`reqValid` 表示“发起一次请求”，`respValid` 表示“请求已经完成”。等待响应期间
+`core_step=0`，因此 PC 和寄存器不能提前改变。这就是 Flash、PSRAM 或 APB 外设出现多周期
+延迟时，CPU 仍能保持正确的原因。
+
+字节访问在 `minirv_simple_bus_master.sv` 中根据地址低两位调整 byte lane：
+
+- `SB`：移动写数据和写掩码；
+- `LBU`：把目标 byte lane 移回结果低 8 位；
+- `LW/SW`：使用完整 32 位数据和 `4'b1111` 写掩码。
+
+---
+
+## 6. SoC 为什么从 Flash 启动
+
+CPU 复位后从 `0x30000000` 取指，这是 ysyxSoC 的 SPI Flash XIP 窗口。完整启动过程是：
+
+```text
+CPU 复位
+  ↓
+从 0x30000000 执行官方 bootloader
+  ↓
+bootloader 在 Flash 固定位置找到嵌入的 ELF
+  ↓
+解析 ELF 的 PT_LOAD 段
+  ↓
+把代码和数据搬到 0x80000000 开始的 PSRAM
+  ↓
+跳转到 AM 程序入口
+```
+
+所以 `minirv-ysyxsoc` 比 `minirv-npc` 慢很多。大型 `am-tests` 会把音频、视频等数据也
+链接进 ELF，即使 `mainargs` 只选择其中一个测试，Flash 镜像和搬运量也不会因此缩小。
+长时间停留在启动阶段不一定表示 CPU 错误；应结合超时日志中的 PC、指令数和波形判断。
+
+---
+
+## 7. C++ 仿真器的最小理解
+
+如果只学过 C，可以先采用下面的对应关系：
+
+| C++ | 可以先近似理解成 C |
+| --- | --- |
+| `namespace npc::soc` | 给全局名称统一增加前缀 |
+| `class Simulator` | 数据结构加一组操作它的函数 |
+| 构造函数 | `simulator_init()` |
+| 析构函数 | 自动调用的 `simulator_destroy()` |
+| `std::unique_ptr<T>` | 具有唯一所有权且自动释放的指针 |
+| `std::vector<uint8_t>` | 自动分配和释放的动态字节数组 |
+| 引用 `T &` | 不能为空、使用时省略 `*` 的指针参数 |
+| `try/catch` | 把深层错误统一交给入口处理 |
+
+`npc/soc/csrc/` 的调用关系：
+
+1. `options.cpp` 解析 `--image/--wave/--max-cycles/--gpio/--headless`；
+2. `flash_image.cpp` 将 Flash 镜像读入动态数组；
+3. `runtime.cpp` 实现 Flash、UART、提交和 trap 的 DPI 回调；
+4. `simulator.cpp` 创建 `VSimTop`，驱动 CPU/SoC 双时钟、VCD 和 NVBoard；
+5. `main.cpp` 只编排生命周期并决定最终退出码。
+
+`Ctrl-C` 的 signal handler 只设置一个标志，不直接调用 SDL、iostream 或 Verilator。
+主循环看到标志后正常离开作用域，`Simulator` 析构函数再关闭 VCD、NVBoard 并调用
+Verilator 的 `final()`。这就是 C++ RAII 在本项目中的实际用途。
+
+---
+
+## 8. 当前版本的使用方法
+
+先进入根目录并加载本仓库环境：
 
 ```bash
+cd /home/onelastikun/to_test/ysyx-workbench
 source .envrc
-
-# MiniRV 架构状态与 NEMU 逐指令一致
-make -C npc test-diff
-
-# SoC CSR、UART、mcycle 和 AM uptime
-make -C npc/soc test-runtime
-
-# SoC 流水灯、密码锁和 8 位数码管
-make -C npc/soc test-gpio
-
-# 统一的 SoC/NVBoard 构建与 GPIO 回归
-make -C npc/soc smoke
-make -C npc/soc test-gpio
 ```
 
-官方 MiniRV 大镜像回归耗时明显更长，仅在改动 MiniRV 指令替换、Flash boot 或 PSRAM
-路径后按需运行：
+### 8.1 快速验证 CPU
 
 ```bash
-make -C npc/soc test-hello
+make -C npc test-minirv
+make -C npc test-diff
+make -C npc test-delayed
+make -C npc test-bus-error
+make -C npc test-itrace
 ```
 
-## 6. 你后续参与 E 阶段流片需要亲自做什么
+### 8.2 运行 NPC AM 程序
 
-### 6.1 能独立解释和调试代码
+```bash
+make -C am-kernels/tests/am-tests \
+  ARCH=minirv-npc run ALL=dummy \
+  NPC_RUN_FLAGS='MAX_CYCLES=100000000'
+```
 
-流片不是只提交“能过测试”的目录。你至少应能说明：
+需要波形时显式加入 `WAVE`：
 
-- 8 条 MiniRV 指令如何生成立即数、写回值和下一 PC；
-- load/store 的字节 lane、符号扩展和写掩码；
-- SimpleBus 为什么必须等待 `respValid`；
-- Flash boot、PSRAM 搬运和 AM 链接地址的关系；
-- UART、GPIO 和 mcycle 的软件/硬件边界；
-- C++ 仿真器如何判断一条指令提交和 good/bad trap。
+```bash
+make -C am-kernels/tests/am-tests \
+  ARCH=minirv-npc run ALL=dummy \
+  NPC_RUN_FLAGS='MAX_CYCLES=100000000 WAVE=build/wave.vcd'
+```
 
-建议从 `npc/README.md` 和本文开始，逐个模块对照波形及短测试阅读。
+不传 `WAVE` 就不会打开 VCD 记录。建议只对短失败用例记录波形。
 
-### 6.2 完成真实板上验证
+### 8.3 运行 ysyxSoC/NVBoard
 
-当前只有 Verilator 和 NVBoard 软件验证，没有物理 FPGA 结论。你需要在具备板卡后：
+在 AM 程序目录中，`minirv-ysyxsoc` 的默认目标就是 `run`：
 
-- 检查时钟、复位和引脚约束；
-- 验证 UART 的实际波特率和字符输出；
-- 用拨码开关验证密码锁输入；
-- 验证 LED 流水灯速度在人眼可见范围；
-- 验证 8 个数码管的位序、段序和有效电平；
-- 记录板卡型号、工具版本、bitstream 和实测现象。
+```bash
+make ARCH=minirv-ysyxsoc mainargs=h \
+  YSYXSOC_RUN_FLAGS='MAX_CYCLES=0'
+```
 
-当前 smoke 程序中的短延时只为仿真，不适合真实 LED 流水灯；板上程序应根据真实
-CPU 频率用 mcycle 或定时器产生可见延时。
+这会构建程序、生成 `.soc.bin`、启动统一的 SoC 仿真器并打开 NVBoard。
 
-### 6.3 整理正式提交 RTL
+需要 SoC 波形：
 
-在进入综合前需要：
+```bash
+make ARCH=minirv-ysyxsoc mainargs=h \
+  YSYXSOC_RUN_FLAGS='MAX_CYCLES=0 WAVE=build/soc.vcd'
+```
 
-- 确认正式顶层名、端口和申请编号符合当期讲义；
-- 将仿真 monitor、Flash C++ 模型、NVBoard C++ 排除在综合 file list 外；
-- 用 `SYNTHESIS` 宏确认 DPI 不进入网表；
-- 把 GPIO 实现纳入正式 ysyxSoC 分支或物理设计 file list，不能只依赖仿真 Makefile overlay；
-- 清理锁存器、多驱动、未定宽常量、组合环、未复位状态和跨时钟域风险；
-- 固化 CPU/SoC 时钟频率、UART 除数和 AM 的 `YSYXSOC_CPU_FREQ`，保证三者一致。
+自动测试或无图形环境：
 
-### 6.4 重新执行当期要求的功能回归
+```bash
+make ARCH=minirv-ysyxsoc mainargs=h \
+  YSYXSOC_RUN_FLAGS='HEADLESS=1 MAX_CYCLES=500000000'
+```
 
-讲义、仓库分支和提交要求可能更新。正式报名/提交前应重新查看官网和群内通知，至少
-重新运行 ISA/DiffTest、AM、SoC 启动、UART、GPIO、综合 lint 等功能回归。当前按用户
-要求跳过的长性能评测，如果当期流片验收明确要求，则仍需要由你补跑并保存结果。
+程序 good trap 后，图形模式会保留最后的 LED 和数码管状态。关闭 NVBoard 窗口或按
+`Ctrl-C` 退出；`Ctrl-C` 返回码为 130。
 
-### 6.5 身份、Git 和提交记录
+当前工作区中的平台 Makefile 可能带有用户自定义的默认周期数或波形路径。为了让测试
+可复现，建议像上面这样显式写出 `NPC_RUN_FLAGS` 或 `YSYXSOC_RUN_FLAGS`。
 
-根 `Makefile` 中的 `STUID/STUNAME` 是用户自己的未提交修改，本次实现没有代为提交。
-你需要确认身份准确后，按讲义要求运行 tracer/提交命令，检查每个阶段提交可复现，且
-不要把 build、波形、PDK、第三方大仓库或密钥提交到 Git。
+### 8.4 SoC 短回归
 
-## 7. E8 物理设计与流片准备摘要（只总结，尚未执行）
+```bash
+make -C npc/soc test-runtime
+make -C npc/soc test-gpio
+make -C npc/soc test-hello
+make -C npc/soc test-sigint
+```
 
-下面是进入 E8 后的建议顺序。本仓库目前没有运行这些步骤，也没有 PPA、DRC/LVS 或
-签核结论。
+这些是功能测试，不代表综合频率、面积、功耗或后端签核达标。
 
-### 7.1 固化可综合 RTL 和约束
+---
 
-- 明确顶层、时钟、复位、输入输出延迟和 false/multicycle path；
-- 确认没有 DPI、initial 测试逻辑、不可综合系统任务和仿真专用模块；
-- 统一复位极性、时钟域和配置寄存器默认值；
-- 对 CDC/RDC 风险建立清单。
+## 9. 当前代码距离 E8 还有多远
 
-### 7.2 逻辑综合与网表检查
+| E8 检查项 | 当前状态 | 还要做什么 |
+| --- | --- | --- |
+| 开放 NPC 地址空间 | 结构上已满足 | 正式顶层不做地址过滤，所有 IFU/LSU 请求都从 SimpleBus 发出；综合前再人工复核 |
+| 去除下降沿触发 | 当前 CPU RTL 未发现 `negedge` | 合并最终改动后重新搜索和 lint |
+| 去除锁存器 | 组合逻辑已有默认赋值 | 必须通过完整 lint 和综合网表确认没有 `LAT*` 单元 |
+| 新版命名要求 | 顶层已为 `ysyx_25100265` | 当前新版方案不要求把所有文件合并或给内部模块统一加学号前缀 |
+| `SYNTHESIS` 隔离 | 正式顶层 DPI 已隔离 | 综合日志中确认没有 DPI、系统任务或黑盒残留 |
+| Verilator 静态检查 | CPU 综合视角曾做过基础 lint | 按 E8 使用最终 file list 和 `-Wall` 重新执行并逐项解释 warning |
+| 复位和四值仿真 | 尚未正式完成 | 使用 iverilog 检查 RTL 的 X 传播和热复位 |
+| ECC 综合 | 未执行 | 按 E6 配置 ECC/ICsprout55 PDK 并生成报告和两种网表 |
+| Verilator 网表仿真 | 未执行 | 使用 `_Synthesis_sim.v.gz` 和标准单元行为模型跑短程序 |
+| iverilog 网表仿真 | 未执行 | 检查综合网表的 X 传播 |
+| ECOS Studio 后端 | 未执行 | 从 Floorplan 开始完成布局布线并导出签核包 |
 
-- 使用讲义指定的 `yosys-sta`/统一工艺库和脚本；
-- 执行 RTL 到门级网表的综合；
-- 检查未映射单元、锁存器、多驱动、常量传播和意外删除逻辑；
-- 对比综合前后的寄存器、存储结构、面积和关键路径；
-- 不自行换成讲义未要求的流程来替代验收工具。
+因此，现在可以说“E7 功能闭环已建立”，但还不能说“已经具备流片签核结果”。
 
-### 7.3 静态时序分析与 PPA
+---
 
-- 检查 setup/hold、最大组合路径、扇出和时钟不确定度；
-- 区分真实关键路径与约束错误造成的假违例；
-- 优化时优先改长组合链、译码扇出、比较/移位/加法路径和寄存器边界；
-- 同时记录频率、面积和功耗估计，避免只追求某一个数字；
-- 每次优化后重新跑功能等价/门级回归，防止 PPA 改动破坏架构行为。
+## 10. 正式流片准备的执行顺序
 
-### 7.4 DFT、ATPG 与可测性
+以下步骤应由你在重新核对当期讲义后依次完成。不要跳过失败步骤继续向后。
 
-- 理解 scan chain、测试模式、测试时钟和测试复位；
-- 确认时钟门控、异步复位、存储器和黑盒单元的 DFT 处理方式；
-- 生成并检查 ATPG pattern、覆盖率和未覆盖故障；
-- 保证测试模式不会改变正常功能模式的时序和接口。
+### 10.1 固化一个可复现版本
 
-### 7.5 布局布线与时钟树
+1. 用 `git status` 检查工作区；
+2. 确认学号、姓名、顶层名和当前分支正确；
+3. 把确定要保留的修改按功能提交，不提交 build、VCD、PDK 或工具包；
+4. 记录 Git commit、讲义日期、工具版本和测试命令；
+5. 从干净构建目录重新跑 NPC 和 SoC 短回归。
 
-- 按 flow 的 stage/snapshot 管理 floorplan、placement、CTS、routing；
-- 规划宏单元、IO、电源网络、拥塞和利用率；
-- CTS 后重新处理 setup/hold、时钟偏斜和插入延时；
-- 布线后检查串扰、天线效应、过渡时间、最大电容和电源完整性。
+建议至少保存：
 
-### 7.6 签核与流片前检查
+```text
+Git commit
+Verilator 版本
+RISC-V 工具链版本
+ECC 版本
+ICsprout55 PDK commit/版本
+ECOS Studio 版本
+所有回归命令和退出码
+```
 
-- RTL 仿真、综合网表仿真和带延时后仿真结果一致；
-- STA 在规定 PVT corner 下收敛；
-- DRC、LVS、ERC 等物理检查通过；
-- 版图、网表、约束、PDK 版本和脚本快照可追溯；
-- 关键配置寄存器、复位值、时钟频率、UART 和外设地址形成最终文档；
-- 按当期一生一芯流程在指定 ysyxSoC 分支提交，并完成代码审查和材料归档。
+### 10.2 按 E8 完成前端检查
 
-## 8. 当前明确限制
+#### A. 地址空间
 
-- 没有执行耗时 SoC 性能评测；
-- 没有真实 FPGA 板上验证；
-- SoC 外部生成 RTL/外设在 Verilator 下有较多上游 warning，当前使用 `-Wno-fatal`；
-- CPU 自身的 `SYNTHESIS` lint 已通过，但尚未运行正式综合和 STA；
-- GPIO 通过当前仓库 overlay 进入仿真，流片前要纳入正式综合 file list；
-- E8、PDK、DFT、ATPG、布局布线和签核均未执行。
+检查正式顶层以下逻辑，确保没有把“未知地址”直接吞掉或在 CPU 内部返回固定数据：
+
+```text
+ysyx_25100265
+  └─ minirv_simple_bus_master
+```
+
+NPC 仿真中的 `simple_bus_pmem.sv` 可以做主存/MMIO范围检查，因为它是外部设备模型；
+该检查不能被误移入正式 CPU 顶层。
+
+#### B. 时钟和锁存器
+
+- CPU 内部只使用 `posedge clock`；
+- `always_comb` 或 `always @(*)` 给所有输出完整默认值；
+- 一个寄存器只能由一个时序块驱动；
+- 在综合网表中搜索 ICsprout55 的 `LAT*` 单元。
+
+#### C. 静态检查
+
+按 E8 对最终综合文件执行 Verilator `--lint-only -Wall`。不能只用大量 `-Wno-*`
+把问题隐藏起来；只有确认无功能影响的 `DECLFILENAME` 和部分 `UNUSED` 才适合按讲义处理。
+
+#### D. 复位和四值仿真
+
+使用 iverilog 单独仿真 NPC，而不是整个 ysyxSoC。重点检查：
+
+- 冷启动和再次拉高复位后的 PC；
+- 总线状态机是否回到取指请求状态；
+- 控制状态中的 X 是否会影响请求、写使能或下一 PC；
+- 未复位的数据寄存器是否会通过控制路径传播；
+- 短 MiniRV/AM 程序能否到达 good trap。
+
+### 10.3 按 E6 使用 ECC 综合 NPC
+
+截至本文更新日期，讲义使用：
+
+- ECC `v0.1.0-alpha.10`；
+- ICsprout55 PDK；
+- oss-cad-suite 中的 Yosys 和相关插件；
+- ECC flow preset：`syn_sta`。
+
+实际执行前再次以官网版本为准。
+
+#### 正式综合文件列表
+
+```text
+npc/vsrc/minirv_regfile.sv
+npc/vsrc/minirv_decode.sv
+npc/vsrc/minirv_core.sv
+npc/vsrc/soc/minirv_simple_bus_master.sv
+npc/vsrc/soc/ysyx_25100265.sv
+```
+
+ECC 关键配置概念：
+
+```text
+design.name      = 自己的工程名
+design.top       = ysyx_25100265
+design.rtl       = 上述五个 RTL 文件
+design.clock_port= clock
+flow.preset      = syn_sta
+pdk.root         = ICsprout55 PDK 的绝对路径
+```
+
+目标频率先采用讲义示例或当期要求，不要一开始盲目设置得很高。综合成功后至少检查：
+
+```text
+<project>/runs/default/Synthesis_yosys/report/post_synthesis/qor_summary.rpt
+<project>/runs/default/Synthesis_yosys/report/post_synthesis/power.rpt
+<project>/runs/default/Synthesis_yosys/log/Synthesis.log
+<project>/runs/default/Synthesis_yosys/output/<project>_Synthesis.v.gz
+<project>/runs/default/Synthesis_yosys/output/<project>_Synthesis_sim.v.gz
+```
+
+其中：
+
+- `qor_summary.rpt`：频率和面积摘要；
+- `power.rpt`：功耗估计；
+- `Synthesis.log`：综合过程、warning 和所用策略；
+- `_Synthesis_sim.v.gz`：保留原顶层向量端口，用于网表仿真；
+- `_Synthesis.v.gz`：向量端口被拆成单 bit，供后端物理设计使用。
+
+讲义提供 `AREA`、`DELAY` 和 `BALANCE` 三类 Yosys 综合策略。先让默认策略正确完成，
+再通过 `YOSYS_SYNTH_STRATEGY` 比较结果；每次比较都必须记录频率、面积、功耗和功能回归，
+不能只选择某个看起来最大的频率。
+
+#### 综合后必须回答的问题
+
+- 顶层是否真的是 `ysyx_25100265`？
+- 是否只有一个时钟端口 `clock`？
+- 是否有未解析模块、黑盒或未映射单元？
+- 是否意外包含 DPI、`$display`、主存模型、SoC 或 NVBoard？
+- 是否出现 `LAT*` 锁存器？
+- 关键寄存器、SimpleBus 端口和复位逻辑是否仍存在？
+- 面积和频率是否合理，是否有明显的约束错误？
+
+### 10.4 按 E8 做网表仿真
+
+网表仿真不能继续直接使用综合前 RTL。基本结构应变为：
+
+```text
+测试顶层/存储器模型
+      ↕
+ysyx_25100265 的 _Synthesis_sim 网表
+      +
+ICsprout55 标准单元行为级仿真模型
+```
+
+建议先做最短测试，再逐步增加：
+
+1. 复位后第一次取指；
+2. MiniRV 定向测试；
+3. 一个短 AM 程序；
+4. 必要时再尝试更长程序。
+
+按照讲义分别完成：
+
+- Verilator 二值网表功能仿真；
+- iverilog 四值网表仿真。
+
+网表中没有原来的 DPI 和容易读取的完整寄存器数组，DiffTest 调试能力会明显下降。因此
+一定先把 RTL 仿真、DiffTest 和四值 RTL 仿真做扎实，再进入网表仿真。
+
+### 10.5 按 E8 使用 ECOS Studio 做后端物理设计
+
+截至本文更新日期，E8 指向 ECOS Studio `v0.1.0-alpha.9`。实际下载时仍应重新核对当期讲义。
+
+创建 Backend Design 工作空间时：
+
+1. 建立 Project 和 Workspace；
+2. `START STEP` 选择 **Floorplan**，跳过 Synthesis；
+3. 导入 ECC 输出中**不含 `_sim`** 的 `<project>_Synthesis.v.gz`；
+4. 选择正确的 ICsprout55 PDK；
+5. `Top Module Name` 填 `ysyx_25100265`；
+6. `Clock Signal Name` 填 `clock`；
+7. 设置或确认目标频率和 Core Utilization；
+8. 运行完整后端 flow。
+
+为什么从 Floorplan 开始：ECC 已经在前一步完成综合，ECOS Studio 这里只消费门级网表。
+
+完成后重点查看：
+
+- `Die Area`：最终版图面积；
+- `Frequency`：包含布线影响及更悲观工作条件后的频率；
+- Checklist/Sign-off details：STA、DRC、LVS 等是否达标；
+- Risk Details：除无宏单元导致的 `config.macro_locations` 提示外，不应忽略其他风险。
+
+如果无法导出签核包：
+
+- STA 不达标：先检查约束，再尝试降低目标频率；
+- DRC/LVS 不达标：查看具体检查项，讲义建议可尝试降低利用率；
+- 修改参数后创建或更新 Workspace，重新运行，不能手工删掉失败报告。
+
+全部达到要求后，从 ECOS Studio 导出 **Signoff Package**。导出成功才表示该次工作空间
+满足工具的签核包门禁，并不等同于项目方已经接收你的流片申请。
+
+### 10.6 按当期流程参与流片
+
+完成签核包后还应：
+
+1. 回到 E9 和当期通知确认必做题、答辩和提交入口；
+2. 核对提交的是个人 NPC 的签核包，而不是整个 ysyxSoC 仿真工程；
+3. 保存 Git commit、ECC 工程、综合网表、ECOS Workspace、签核包和报告；
+4. 记录顶层名、时钟名、目标频率、面积、工具和 PDK 版本；
+5. 检查归档中没有个人密钥、无关第三方仓库或巨大调试波形；
+6. 按项目方要求参加代码审查、答辩和最终提交流程。
+
+E8 页面目前仍标有“待续未完”，所以真正报名时必须再看官网和群内最新通知。
+
+---
+
+## 11. 推荐的个人验收清单
+
+### 功能冻结
+
+- [ ] 8 条 MiniRV 指令定向测试通过；
+- [ ] DiffTest 通过；
+- [ ] 延迟 SimpleBus 测试通过；
+- [ ] 非法地址测试通过；
+- [ ] AM CPU tests 中正常测试通过；
+- [ ] SoC Flash→PSRAM→AM 启动通过；
+- [ ] UART、CSR/uptime、GPIO 和 Ctrl-C 短回归通过；
+- [ ] 所有结果对应同一个明确 Git commit。
+
+### E8 前端准备
+
+- [ ] 正式顶层开放所有 IFU/LSU 地址；
+- [ ] CPU 中没有下降沿触发；
+- [ ] Verilator `--lint-only -Wall` 已逐项处理；
+- [ ] RTL 四值仿真和热复位通过；
+- [ ] 仿真专用代码均被排除或由 `SYNTHESIS` 隔离。
+
+### 综合和网表
+
+- [ ] ECC 使用当期指定版本和 PDK；
+- [ ] 综合 file list 只包含个人 NPC；
+- [ ] 日志没有未解析模块、黑盒和意外锁存器；
+- [ ] QoR、功耗、日志和两种网表已归档；
+- [ ] Verilator 网表仿真通过；
+- [ ] iverilog 网表四值仿真通过。
+
+### 后端和报名
+
+- [ ] ECOS Studio 从 Floorplan 开始；
+- [ ] 导入的是不含 `_sim` 的后端网表；
+- [ ] Top/Clock 名称正确；
+- [ ] STA、DRC、LVS 和风险检查满足当期要求；
+- [ ] Signoff Package 成功导出并可追溯；
+- [ ] 已重新阅读 E9 和当期通知；
+- [ ] 答辩与流片申请材料已提交。
+
+---
+
+## 12. 本次修订相对旧文档的重要更正
+
+1. 明确综合入口在 E6，而不是等到 E8 才开始；
+2. 综合工具写为讲义当前使用的 ECC/Yosys/ICsprout55，不再写成未说明的
+   `yosys-sta` 流程；
+3. 明确只综合个人 NPC，排除 ysyxSoC、GPIO、NVBoard、存储器模型和 C++；
+4. 删除把 DFT/ATPG 当作当前 E8 必做内容的描述，因为当前 E8 没有给出这项验收任务；
+5. 明确 `_Synthesis_sim.v.gz` 用于网表仿真，`_Synthesis.v.gz` 用于后端；
+6. 明确新版集成方案原则上不要求合并单文件或给所有内部模块添加学号前缀；
+7. 补充当前实际 RTL/C++/AM 文件关系、运行命令和逐阶段验收清单。
