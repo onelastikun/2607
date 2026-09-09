@@ -25,7 +25,7 @@ image: image-dep
 	@echo + OBJCOPY "->" $(IMAGE_REL).bin
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
-NPC_RUN_FLAGS ?= MAX_CYCLES=100000000
+NPC_RUN_FLAGS ?= MAX_CYCLES=100000 WAVE=build/wave.vcd
 NPC_DIFF      ?=
 
 run: insert-arg

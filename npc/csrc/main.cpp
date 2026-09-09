@@ -14,6 +14,13 @@
 #include "simulator.h"
 #include "types.h"
 
+#define RESET   "\033[0m"
+#define RED     "\033[31m"      // 红色
+#define GREEN   "\033[32m"      // 绿色
+#define YELLOW  "\033[33m"      // 黄色
+#define BLUE    "\033[34m"      // 蓝色
+#define BOLD    "\033[1m"       // 高亮
+
 // 仿真器入口只编排对象生命周期和运行状态；具体功能由各模块负责。
 int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
@@ -75,12 +82,12 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
     }
     if (state.code != 0) {
-      std::cerr << "BAD TRAP at pc=0x" << std::hex << state.pc << std::dec
+      std::cerr << RED "BAD TRAP " RESET "at pc=0x"  << std::hex << state.pc << std::dec
                 << ", code=" << state.code << '\n';
       return EXIT_FAILURE;
     }
 
-    std::cout << "GOOD TRAP at pc=0x" << std::hex << state.pc << std::dec
+    std::cout << GREEN "GOOD TRAP " RESET "at pc=0x"  << std::hex << state.pc << std::dec
               << " after " << executed << " cycles, "
               << simulator.instruction_count() << " instructions\n";
     return EXIT_SUCCESS;

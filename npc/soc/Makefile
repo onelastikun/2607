@@ -52,7 +52,7 @@ $(AUTO_BIND): $(NXDC)
 $(BIN): $(VSRCS) $(CSRCS) $(NVBOARD_ARCHIVE) Makefile
 	@mkdir -p $(BUILD_DIR)
 	$(VERILATOR) --cc --exe --build --no-timing --trace --top-module $(TOPNAME) \
-		--Mdir $(OBJ_DIR) -DPDK_BEHAV -Wall -Wno-fatal -Wno-TIMESCALEMOD \
+		--Mdir $(OBJ_DIR) -DPDK_BEHAV -Wall -Wno-fatal -D__UART_TO_CONSOLE__ -Wno-TIMESCALEMOD \
 		-Wno-DECLFILENAME -Wno-PINMISSING -Wno-UNUSEDSIGNAL -Wno-STMTDLY \
 		$(INCLUDE_FLAGS) $(VSRCS) $(CSRCS) $(NVBOARD_ARCHIVE) \
 		-CFLAGS "-std=c++17 -O2 -Wall -Wextra $(shell sdl2-config --cflags) \

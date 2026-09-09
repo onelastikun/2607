@@ -33,12 +33,6 @@ extern "C" void flash_read(int address, int *data) {
   }
 }
 
-extern "C" void soc_uart_write(unsigned char ch) {
-  if (g_state != nullptr) g_state->uart_output.push_back(static_cast<char>(ch));
-  std::putchar(ch);
-  std::fflush(stdout);
-}
-
 extern "C" void npc_commit(std::uint32_t pc, std::uint32_t instruction) {
   if (g_state == nullptr) return;
   g_state->last_pc = pc;

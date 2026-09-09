@@ -21,13 +21,11 @@ Area heap = RANGE(&_heap_start, PMEM_END);
 static const char mainargs[MAINARGS_MAX_LEN] = TOSTRING(MAINARGS_PLACEHOLDER);
 
 static void uart_init(void) {
-  // DLAB=1 时偏移 0/1 是波特率除数。除数 1 配合 1.8432 MHz 外设时钟得到 115200。
   UART_LCR = 0x80u;
-  UART_THR = 0x01u;  // DLL
+  UART_THR = 0x0Du;  // DLL
   UART_IER = 0x00u;  // DLM
-  UART_LCR = 0x03u;  // 8 位数据、无校验、1 位停止位
-  UART_FCR = 0x07u;  // 启用 FIFO，并清空收发 FIFO
-  UART_IER = 0x00u;  // 当前阶段使用轮询，不开启中断
+  UART_LCR = 0x03u;  
+  UART_FCR = 0x07u;  
 }
 
 void putch(char ch) {
