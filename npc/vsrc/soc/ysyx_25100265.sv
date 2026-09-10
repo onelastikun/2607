@@ -87,8 +87,11 @@ module ysyx_25100265 #(
 
   // unused 调试信号保留在核心边界，便于将来接入 SoC 级 itrace。
   /* verilator lint_off UNUSEDSIGNAL */
+  // 综合模式不会保留仿真 trap 回调，因此这些调试状态需要显式标记为已检查；
+  // 该归约信号本身会被综合优化掉，不改变 CPU 的功能逻辑。
   wire _unused_debug = &{1'b0, instruction_count, commit_valid, commit_pc,
-                          commit_inst, gpr_state};
+                          commit_inst, gpr_state, is_ebreak, illegal, trap_code,
+                          pc, inst};
   /* verilator lint_on UNUSEDSIGNAL */
 
 `ifndef SYNTHESIS
