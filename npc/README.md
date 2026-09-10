@@ -1249,3 +1249,39 @@ make -C npc/soc smoke
 - 已完成 NPC、AM、总线和 SoC 功能接入；
 - 耗时性能评测按用户要求跳过；
 - 尚未进行真实 FPGA 和 E8 物理设计。
+
+## 40. E8 Icarus 四值仿真
+
+E8 要求使用 Icarus Verilog 检查未复位触发器导致的 X 信号传播。Icarus 不支持
+DPI-C，因此本项目增加了条件编译和 VPI 插件：
+
+```text
+vsrc/iverilog_top.sv       Icarus 专用时钟、复位和波形顶层
+iverilog/vpi_memory.cpp    注册 $pmem_read/$pmem_write
+csrc/memory.cpp             复用物理内存模型
+csrc/device.cpp             复用串口和计时器模型
+```
+
+运行定向四值测试：
+
+```bash
+# OSS CAD Suite 中需要有 iverilog、vvp 和 iverilog-vpi
+make -C npc test-iverilog
+```
+
+该目标会：
+
+1. 使用 `-g2012 -D__ICARUS__` 编译 NPC；
+2. 构建 `build/iverilog/npc_vpi.vpi`；
+3. 通过 `+img=...` 加载裸镜像；
+4. 运行 `minirv-directed.bin`，在 `ebreak` 时输出 GOOD/BAD TRAP；
+5. 默认不生成波形；需要波形时可在 `vvp` 命令后追加 `+WAVE`。
+
+Icarus 输出的以下提示是讲义允许忽略的敏感列表提示：
+
+```text
+sorry: constant selects in always_* processes are not fully supported
+```
+
+VPI 插件复用 Verilator 的 `Memory` 和 `DeviceMap`，因此串口、计时器和主存的基本行为
+保持一致。Icarus 路径不使用 DiffTest；出现问题时应通过 VCD 和 `$display` 定位。

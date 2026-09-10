@@ -20,6 +20,7 @@ module ysyx_25100265 #(
 );
 
 `ifndef SYNTHESIS
+`ifndef __ICARUS__
   // DPI 只服务于 Verilator 调试；综合/流片定义 SYNTHESIS 后不会进入硬件网表。
   import "DPI-C" function void npc_ebreak(
     input int unsigned trap_pc,
@@ -33,6 +34,7 @@ module ysyx_25100265 #(
     input int unsigned commit_pc,
     input int unsigned commit_inst
   );
+`endif
 `endif
 
   logic        core_step;
@@ -95,6 +97,7 @@ module ysyx_25100265 #(
   /* verilator lint_on UNUSEDSIGNAL */
 
 `ifndef SYNTHESIS
+`ifndef __ICARUS__
   // 提交、异常和 ebreak 通知属于仿真可观测性，不改变 CPU 架构状态。
   always_ff @(posedge clock) begin
     if (!reset && core_step) begin
@@ -103,6 +106,7 @@ module ysyx_25100265 #(
       else if (is_ebreak) npc_ebreak(pc, trap_code);
     end
   end
+`endif
 `endif
 
 endmodule

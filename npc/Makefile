@@ -19,6 +19,19 @@ ITRACE        ?= 0
 DIFF          ?=
 NEMU_REF      ?= $(abspath ../nemu/build/riscv32-nemu-interpreter-so)
 
+# E8 Icarus/VPI 四值仿真构建目录。VPI 插件复用 csrc 中的内存和设备模型，
+# 但不放入 CSRCS，避免它被 Verilator 当作普通 C++ 仿真源编译。
+IVERILOG       ?= iverilog
+VVP            ?= vvp
+IVERILOG_VPI   ?= iverilog-vpi
+IVERILOG_DIR   := $(BUILD_DIR)/iverilog
+IVERILOG_SIM   := $(IVERILOG_DIR)/npc.vvp
+IVERILOG_VPI_SO := $(IVERILOG_DIR)/npc_vpi.vpi
+IVERILOG_VPI_SRCS := $(abspath iverilog/vpi_memory.cpp) \
+                     $(abspath csrc/memory.cpp) \
+                     $(abspath csrc/device.cpp) \
+                     $(abspath csrc/runtime.cpp)
+
 VSRCS         := $(shell find $(abspath vsrc) -type f \( -name '*.v' -o -name '*.sv' \) | sort)
 CSRCS         := $(shell find $(abspath csrc) -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' \) | sort)
 
@@ -56,6 +69,16 @@ $(DELAY_BIN): $(VSRCS) $(CSRCS) Makefile
 
 run: $(BIN)
 	$(BIN) $(RUN_ARGS)
+
+
+$(IVERILOG_VPI_SO): $(IVERILOG_VPI_SRCS) $(shell find $(abspath csrc/include) -type f) Makefile
+	@mkdir -p $(IVERILOG_DIR)
+	@cd $(IVERILOG_DIR) && $(IVERILOG_VPI) --name=npc_vpi \
+		-I$(abspath csrc/include) $(IVERILOG_VPI_SRCS)
+
+$(IVERILOG_SIM): $(VSRCS) Makefile
+	@mkdir -p $(IVERILOG_DIR)
+	$(IVERILOG) -g2012 -D__ICARUS__ -s iverilog_top -o $@ $(VSRCS)
 
 $(DIRECTED_ELF): tests/minirv-directed.S tests/linker.ld
 	@mkdir -p $(BUILD_DIR)
@@ -102,6 +125,11 @@ test-bus-error: $(BIN) $(BUS_ERROR_BIN)
 		printf '%s\n' "$$output" | grep -q \
 		  'SimpleBus access error before pc=0x80000004 cause=0x1'
 
+# E8 四值 RTL 仿真：Icarus 通过 VPI 加载裸镜像并替代 Verilator 的 DPI-C。
+test-iverilog: $(IVERILOG_SIM) $(IVERILOG_VPI_SO) $(DIRECTED_BIN)
+	@cd $(abspath .) && $(VVP) -M$(abspath $(IVERILOG_DIR)) -mnpc_vpi \
+		$(abspath $(IVERILOG_SIM)) +img=$(abspath $(DIRECTED_BIN))
+
 sim:
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
 	@$(MAKE) run MAX_CYCLES=$(MAX_CYCLES) IMG=$(IMG) WAVE=$(WAVE) ITRACE=$(ITRACE) DIFF=$(DIFF)
@@ -109,6 +137,6 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-minirv test-diff test-delayed test-itrace test-bus-error sim clean
+.PHONY: all run test-minirv test-diff test-delayed test-itrace test-bus-error test-iverilog sim clean
 
 include ../Makefile

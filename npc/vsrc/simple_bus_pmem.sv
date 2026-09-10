@@ -24,6 +24,7 @@ module simple_bus_pmem #(
   output logic        bus_error
 );
 
+`ifndef __ICARUS__
   import "DPI-C" function int unsigned pmem_read(
     input int unsigned address,
     input byte unsigned length
@@ -33,6 +34,9 @@ module simple_bus_pmem #(
     input int unsigned data,
     input byte unsigned mask
   );
+`else
+  // Icarus 不支持 DPI-C；读数据通过 VPI 系统任务的第三个输出参数返回。
+`endif
 
   localparam logic [31:0] PMEM_BASE = 32'h8000_0000;
   localparam logic [31:0] PMEM_END  = 32'h8800_0000;
@@ -94,7 +98,11 @@ module simple_bus_pmem #(
                 (lsu_respValid && lsu_error_reg);
   end
 
+`ifdef __ICARUS__
+  always @(posedge clock) begin
+`else
   always_ff @(posedge clock) begin
+`endif
     if (reset) begin
       ifu_pending <= 1'b0;
       lsu_pending <= 1'b0;
@@ -109,8 +117,15 @@ module simple_bus_pmem #(
         ifu_pending <= 1'b1;
         ifu_wait <= READ_DELAY;
         ifu_error_reg <= !pmem_contains(ifu_addr, 8'd4);
+`ifdef __ICARUS__
+        if (pmem_contains(ifu_addr, 8'd4))
+          $pmem_read(ifu_addr, 8'd4, ifu_data_reg);
+        else
+          ifu_data_reg <= 32'd0;
+`else
         ifu_data_reg <= pmem_contains(ifu_addr, 8'd4)
                       ? pmem_read(ifu_addr, 8'd4) : 32'd0;
+`endif
       end else if (ifu_pending) begin
         if (ifu_wait != 0) ifu_wait <= ifu_wait - 1;
         else ifu_pending <= 1'b0;
@@ -124,13 +139,22 @@ module simple_bus_pmem #(
         if (!lsu_wen && (lsu_length != 0) &&
             valid_data_address(lsu_addr, lsu_length, 1'b0)) begin
           // SimpleBus 返回标准 32 位 byte lane，主设备再把目标字节移回低位。
+`ifdef __ICARUS__
+          $pmem_read(lsu_addr, lsu_length, lsu_data_reg);
+          lsu_data_reg = lsu_data_reg << lsu_shift;
+`else
           lsu_data_reg <= pmem_read(lsu_addr, lsu_length) << lsu_shift;
+`endif
         end else begin
           lsu_data_reg <= 32'd0;
         end
         if (lsu_wen && (lsu_length != 0) &&
             valid_data_address(lsu_addr, lsu_length, 1'b1)) begin
+`ifdef __ICARUS__
+          $pmem_write(aligned_lsu_addr, lsu_wdata, {4'd0, lsu_wmask});
+`else
           pmem_write(aligned_lsu_addr, lsu_wdata, {4'd0, lsu_wmask});
+`endif
         end
       end else if (lsu_pending) begin
         if (lsu_wait != 0) lsu_wait <= lsu_wait - 1;

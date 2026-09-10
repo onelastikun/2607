@@ -15,6 +15,7 @@ module top #(
   output logic [511:0] gpr_state
 );
 
+`ifndef __ICARUS__
   import "DPI-C" function void npc_ebreak(
     input int unsigned trap_pc,
     input int unsigned code
@@ -27,6 +28,7 @@ module top #(
     input int unsigned fault_pc,
     input int unsigned cause
   );
+`endif
 
   logic        core_step;
   logic [31:0] core_imem_addr;
@@ -98,11 +100,32 @@ module top #(
   );
 
   // 总线错误优先于非法指令和 ebreak，避免把失败访问误报为正常结束。
+`ifdef __ICARUS__
+  always @(posedge clock) begin
+`else
   always_ff @(posedge clock) begin
+`endif
     if (!reset && core_step) begin
+`ifndef __ICARUS__
       if (bus_error) npc_bus_error(pc, 32'd1);
       else if (illegal) npc_abort(pc, inst);
       else if (is_ebreak) npc_ebreak(pc, trap_code);
+`else
+      // Icarus 没有 DPI-C；E8 四值仿真直接用系统任务报告并结束。
+      if (bus_error) begin
+        $display("SimpleBus access error before pc=0x%08x cause=0x1", pc);
+        $fatal(1);
+      end else if (illegal) begin
+        $display("illegal instruction at pc=0x%08x: 0x%08x", pc, inst);
+        $fatal(1);
+      end else if (is_ebreak) begin
+        if (trap_code == 0)
+          $display("GOOD TRAP at pc=0x%08x", pc);
+        else
+          $display("BAD TRAP at pc=0x%08x code=%0d", pc, trap_code);
+        $finish;
+      end
+`endif
     end
   end
 

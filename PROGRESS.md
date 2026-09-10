@@ -128,3 +128,21 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 - 耗时 SoC 性能评测按用户要求跳过；
 - GPIO 仍通过仓库 overlay 进入仿真，流片前需纳入正式综合文件列表；
 - E8 综合、STA、PPA、DFT、布局布线和签核尚未执行。
+
+## E8 前端仿真适配（2026-09-10）
+
+已完成当前仓库可执行的 Icarus/VPI 基础路径：
+
+- `simple_bus_pmem.sv` 在 Icarus 下使用 `$pmem_read/$pmem_write`，Verilator 继续使用 DPI-C；
+- `top.sv` 在 Icarus 下使用 `$display/$fatal/$finish` 报告 trap；
+- 新增 `npc/vsrc/iverilog_top.sv` 作为时钟、复位和可选 VCD 顶层；
+- 新增 `npc/iverilog/vpi_memory.cpp`，通过 VPI 注册访存系统任务并加载 `+img=FILE`；
+- 新增 `make -C npc test-iverilog`；
+- `minirv-directed.bin` 已通过 Icarus 四值仿真，输出 `GOOD TRAP`；
+- Icarus 的 constant-select `sorry` 提示符合讲义说明，可忽略。
+
+当前仍未完成：
+
+- 用 Icarus 跑完完整 AM/microbench 长程序；
+- ECC 综合和两种综合网表仿真；
+- ECOS Studio 后端物理设计、STA、DRC/LVS 和签核包。
