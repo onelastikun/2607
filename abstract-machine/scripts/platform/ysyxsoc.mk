@@ -42,7 +42,7 @@ image: image-dep
 
 soc-image: $(SOC_BIN)
 
-YSYXSOC_RUN_FLAGS ?= MAX_CYCLES=0 WAVE=
+YSYXSOC_RUN_FLAGS ?= MAX_CYCLES=0 WAVE= #build/wave.vcd
 run: soc-image
 	$(MAKE) -C $(NPC_HOME)/soc run IMG=$(SOC_BIN) $(YSYXSOC_RUN_FLAGS)
 

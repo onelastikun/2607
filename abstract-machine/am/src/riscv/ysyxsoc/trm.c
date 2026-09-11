@@ -17,6 +17,8 @@ int main(const char *args);
 #define UART_LCR  (*(volatile uint8_t *)(UART_BASE + 3u))
 #define UART_LSR  (*(volatile uint8_t *)(UART_BASE + 5u))
 
+#define GPIO_BASE 0x20001000
+
 Area heap = RANGE(&_heap_start, PMEM_END);
 static const char mainargs[MAINARGS_MAX_LEN] = TOSTRING(MAINARGS_PLACEHOLDER);
 
@@ -42,5 +44,8 @@ void halt(int code) {
 
 void _trm_init(void) {
   uart_init();
+  (*(volatile uint8_t *)(GPIO_BASE)) = 0xff;
+  (*(volatile uint8_t *)(GPIO_BASE + 4u)) = 0xff;
+  (*(volatile uint8_t *)(GPIO_BASE + 8u)) = 0xff;
   halt(main(mainargs));
 }
