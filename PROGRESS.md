@@ -126,10 +126,10 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 - `minirvEMU` 暂缓；
 - 没有真实 FPGA 板上验证；
 - 耗时 SoC 性能评测按用户要求跳过；
-- GPIO 仍通过仓库 overlay 进入仿真，流片前需纳入正式综合文件列表；
-- E8 综合、STA、PPA、DFT、布局布线和签核尚未执行。
+- GPIO 通过 SoC/NVBoard 仿真路径验证，不属于个人 NPC 的 E8 综合网表；
+- E8 后端物理设计、布局布线、STA/DRC/LVS 和签核尚未执行。
 
-## E8 前端仿真适配（2026-09-10）
+## E8 前端仿真适配（历史记录：2026-09-10）
 
 已完成当前仓库可执行的 Icarus/VPI 基础路径：
 
@@ -141,11 +141,11 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 - `minirv-directed.bin` 已通过 Icarus 四值仿真，输出 `GOOD TRAP`；
 - Icarus 的 constant-select `sorry` 提示符合讲义说明，可忽略。
 
-当前仍未完成：
+当时仍未完成的项目，已在后续记录中更新：
 
-- 用 Icarus 跑完完整 AM/microbench 长程序；
-- ECC 综合和两种综合网表仿真；
-- ECOS Studio 后端物理设计、STA、DRC/LVS 和签核包。
+- 完整 AM/microbench 长程序回归按用户要求跳过；
+- ECC 综合和短综合网表仿真已在 2026-09-11 完成；
+- ECOS Studio 后端物理设计、STA、DRC/LVS 和签核包仍未执行。
 
 
 ## E8 网表仿真（2026-09-11）
@@ -168,4 +168,5 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 当前 E8 剩余：
 
 - 可按当期要求补充更长的网表/AM 回归；
-- ECOS Studio Floorplan、布局布线、STA/DRC/LVS 和 Signoff Package 尚未执行。
+- 本机未发现 ECOS Studio 可执行文件，因此暂时无法启动后端 flow；
+- Floorplan、布局布线、STA/DRC/LVS 和 Signoff Package 尚未执行。

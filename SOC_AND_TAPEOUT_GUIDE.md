@@ -580,6 +580,10 @@ Icarus 四值门级仿真。若 ECC 尚未运行，会明确报出缺少 `npc_Sy
 - Checklist/Sign-off details：STA、DRC、LVS 等是否达标；
 - Risk Details：除无宏单元导致的 `config.macro_locations` 提示外，不应忽略其他风险。
 
+当前环境检查：截至 2026 年 9 月 11 日，本机未发现 ECOS Studio 可执行文件或 AppImage，
+因此本仓库只能完成 ECC、综合网表仿真和文档准备，不能伪造后端结果。安装官方工具后，
+应从下面的 Floorplan 步骤继续。
+
 如果无法导出签核包：
 
 - STA 不达标：先检查约束，再尝试降低目标频率；
@@ -623,7 +627,7 @@ E8 页面目前仍标有“待续未完”，所以真正报名时必须再看�
 - [x] CPU 中没有下降沿触发；
 - [x] Verilator `--lint-only -Wall` 已逐项处理；
 - [x] 短 MiniRV RTL 四值仿真和复位通过；
-- [ ] 仿真专用代码均被排除或由 `SYNTHESIS` 隔离。
+- [x] 仿真专用代码均被排除或由 `SYNTHESIS` 隔离。
 
 ### 综合和网表
 
