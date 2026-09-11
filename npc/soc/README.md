@@ -11,7 +11,8 @@
 - `csrc/flash_image.cpp`：外部 SPI Flash 镜像；
 - `csrc/simulator.cpp`：统一驱动双时钟、波形和 NVBoard；
 - `constr/SimTop.nxdc`：开关、LED、数码管和 UART 引脚绑定；
-- `vsrc/uart_apb_monitor.sv`：旁路观察真正到达 16550 的 APB 写事务并输出字符。
+- ysyxSoC 官方 16550 模型在 `__UART_TO_CONSOLE__` 配置下直接输出 UART 字符，
+  当前不再维护额外的 UART APB 旁路监视器。
 
 仿真使用 `PDK_BEHAV` 行为级 PAD，不需要也不会加载流片 PDK。
 
