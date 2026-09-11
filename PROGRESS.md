@@ -173,3 +173,22 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 - 可按当期要求补充更长的网表/AM 回归；
 - 本机未发现 ECOS Studio 可执行文件，因此暂时无法启动后端 flow；
 - Floorplan、布局布线、STA/DRC/LVS 和 Signoff Package 尚未执行。
+
+## E7/SoC 短回归复核（2026-09-11）
+
+在当前工作树、Verilator 5.048、NVBoard 和 ysyxSoC 均可用的环境下，重新执行：
+
+```text
+make -C npc/soc VERILATOR=/home/onelastikun/verilator/bin/verilator \
+  test-runtime test-gpio test-hello test-sigint
+```
+
+结果全部通过：
+
+- `test-runtime`：CSR、计时器、UART 和 good trap 通过；
+- `test-gpio`：输入正确时得到 `gpio_out=0x600d`，输入错误时得到 `gpio_out=0xdead`，数码管均为 `0x25100265`；
+- `test-hello`：输出 `Hello, AbstractMachine!` 和 `mainargs` 后正常退出；
+- `test-sigint`：捕获 Ctrl-C，输出清理提示并以预期状态结束。
+
+这些是功能短回归，不包含按用户要求跳过的长时间性能评测。当前仓库仍未进行真实 FPGA
+板上验证，也未进行 ECOS Studio 后端物理设计。
