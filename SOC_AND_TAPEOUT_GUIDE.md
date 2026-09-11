@@ -422,8 +422,17 @@ NPC 仿真中的 `simple_bus_pmem.sv` 可以做主存/MMIO范围检查，因为�
 
 #### C. 静态检查
 
-按 E8 对最终综合文件执行 Verilator `--lint-only -Wall`。不能只用大量 `-Wno-*`
-把问题隐藏起来；只有确认无功能影响的 `DECLFILENAME` 和部分 `UNUSED` 才适合按讲义处理。
+按 E8 对最终综合文件执行 Verilator `--lint-only -Wall`：
+
+```bash
+make -C npc \
+  VERILATOR=/home/onelastikun/verilator/bin/verilator \
+  lint-synthesis
+```
+
+该目标只检查个人 NPC 的综合 file list，不会把 SoC、NVBoard、主存模型或 C++ 仿真器
+带入综合视角。当前内部模块名带学号而源文件保留功能命名，因此只抑制已确认无功能影响的
+`DECLFILENAME` 提示；其他 warning 或 error 仍会使检查失败，不能用大量 `-Wno-*` 隐藏问题。
 
 #### D. 复位和四值仿真
 

@@ -51,6 +51,14 @@ IVERILOG_VPI_SRCS := $(abspath iverilog/vpi_memory.cpp) \
 VSRCS         := $(shell find $(abspath vsrc) -type f \( -name '*.v' -o -name '*.sv' \) | sort)
 CSRCS         := $(shell find $(abspath csrc) -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' \) | sort)
 
+# E8 综合视角只检查个人 NPC，明确排除 SoC、NVBoard、主存模型和 C++ 仿真代码。
+SYNTHESIS_TOP   := ysyx_25100265
+SYNTHESIS_SRCS  := $(abspath vsrc/minirv_regfile.sv) \
+                   $(abspath vsrc/minirv_decode.sv) \
+                   $(abspath vsrc/minirv_core.sv) \
+                   $(abspath vsrc/soc/minirv_simple_bus_master.sv) \
+                   $(abspath vsrc/soc/ysyx_25100265.sv)
+
 VERILATOR_BASE_FLAGS := --cc --exe --build --trace \
                         --top-module $(TOPNAME) \
                         -Wall -Wno-DECLFILENAME \
@@ -73,6 +81,13 @@ RUN_ARGS      += --diff $(abspath $(DIFF))
 endif
 
 all: $(BIN)
+
+# 运行 E8 要求的综合视角 lint。
+# 内部模块名带学号而文件名保持功能命名，因此仅屏蔽 DECLFILENAME 提示。
+lint-synthesis:
+	env -u VERILATOR_ROOT $(VERILATOR) --lint-only --language 1800-2012 \
+		-DSYNTHESIS -Wall -Wno-DECLFILENAME --top-module $(SYNTHESIS_TOP) \
+		$(SYNTHESIS_SRCS)
 
 $(BIN): $(VSRCS) $(CSRCS) Makefile
 	@mkdir -p $(BUILD_DIR)
@@ -204,6 +219,6 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-minirv test-diff test-delayed test-itrace test-bus-error test-iverilog test-netlist-verilator test-netlist-iverilog test-netlist sim clean
+.PHONY: all lint-synthesis run test-minirv test-diff test-delayed test-itrace test-bus-error test-iverilog test-netlist-verilator test-netlist-iverilog test-netlist sim clean
 
 include ../Makefile
