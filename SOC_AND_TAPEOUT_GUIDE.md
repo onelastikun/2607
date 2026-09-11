@@ -364,7 +364,7 @@ make -C npc/soc test-sigint
 | 去除锁存器 | 组合逻辑已有默认赋值 | 必须通过完整 lint 和综合网表确认没有 `LAT*` 单元 |
 | 新版命名要求 | 顶层已为 `ysyx_25100265` | 当前新版方案不要求把所有文件合并或给内部模块统一加学号前缀 |
 | `SYNTHESIS` 隔离 | 正式顶层 DPI 已隔离 | 综合日志中确认没有 DPI、系统任务或黑盒残留 |
-| Verilator 静态检查 | CPU 综合视角曾做过基础 lint | 按 E8 使用最终 file list 和 `-Wall` 重新执行并逐项解释 warning |
+| Verilator 静态检查 | 已通过 `make -C npc lint-synthesis` | 仅保留已确认无功能影响的 `DECLFILENAME` 抑制，其他 warning/error 仍需处理 |
 | 复位和四值仿真 | 短 MiniRV RTL 测试已通过 | 需要时再用更长的 AM 程序观察 X 传播 |
 | ECC 综合 | 已完成 | 复核报告、网表和综合 warning；源文件变更后需重新运行 |
 | Verilator 网表仿真 | 短门级测试已通过 | 可按当期要求补充更长程序回归 |
@@ -589,9 +589,10 @@ Icarus 四值门级仿真。若 ECC 尚未运行，会明确报出缺少 `npc_Sy
 - Checklist/Sign-off details：STA、DRC、LVS 等是否达标；
 - Risk Details：除无宏单元导致的 `config.macro_locations` 提示外，不应忽略其他风险。
 
-当前环境检查：截至 2026 年 9 月 11 日，本机未发现 ECOS Studio 可执行文件或 AppImage，
-因此本仓库只能完成 ECC、综合网表仿真和文档准备，不能伪造后端结果。安装官方工具后，
-应从下面的 Floorplan 步骤继续。
+当前环境检查：截至 2026 年 9 月 11 日，本机未发现 ECOS Studio 可执行文件或 AppImage。
+`~/.local/ecos-sdk` 是嵌入式软件 SDK，提供的是 `ecos` 固件命令行工具，不是 E8 所需的
+后端 Studio，不能替代 ECOS Studio。因此本仓库只能完成 ECC、综合网表仿真和文档准备，
+不能伪造后端结果；安装官方工具后，应从下面的 Floorplan 步骤继续。
 
 如果无法导出签核包：
 
