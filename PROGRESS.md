@@ -146,3 +146,26 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 - 用 Icarus 跑完完整 AM/microbench 长程序；
 - ECC 综合和两种综合网表仿真；
 - ECOS Studio 后端物理设计、STA、DRC/LVS 和签核包。
+
+
+## E8 网表仿真（2026-09-11）
+
+已完成：
+
+- 在 `ecc/npc/` 建立个人 NPC 的 ECC `syn_sta` 工程和 `rtl/npc.f` 文件列表；
+- ECC 综合成功，顶层为 `ysyx_25100265`；
+- 综合检查报告为 `Found and reported 0 problems`；
+- 生成 `npc_Synthesis.v.gz` 和 `npc_Synthesis_sim.v.gz`；
+- QoR 报告估算频率 158 MHz、CELLA 9185、总动态功耗约 0.2598 mW；
+- 新增门级仿真外部存储器模型和 `e8-netlist-smoke.S`；
+- Verilator 短门级功能仿真通过；
+- Icarus 短门级四值仿真通过；
+- `make -C npc test-netlist` 已通过。
+
+门级仿真模型针对 Verilator 的标准单元事件调度，保持响应有效信号到完整采样边沿，
+并允许完成响应的同时接收下一请求；这是仿真模型的握手实现，不改变个人 NPC 的综合 RTL。
+
+当前 E8 剩余：
+
+- 可按当期要求补充更长的网表/AM 回归；
+- ECOS Studio Floorplan、布局布线、STA/DRC/LVS 和 Signoff Package 尚未执行。

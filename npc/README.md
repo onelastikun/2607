@@ -1285,3 +1285,44 @@ sorry: constant selects in always_* processes are not fully supported
 
 VPI 插件复用 Verilator 的 `Memory` 和 `DeviceMap`，因此串口、计时器和主存的基本行为
 保持一致。Icarus 路径不使用 DiffTest；出现问题时应通过 VCD 和 `$display` 定位。
+
+
+## 41. E8 门级网表仿真
+
+ECC 综合后会产生两份网表：
+
+```text
+ecc/npc/runs/default/Synthesis_yosys/output/npc_Synthesis_sim.v.gz
+  用于功能仿真，保留原始向量端口
+
+ecc/npc/runs/default/Synthesis_yosys/output/npc_Synthesis.v.gz
+  用于 ECOS Studio 后端物理设计
+```
+
+当前仓库的门级短回归使用 `e8-netlist-smoke.S`，通过程序写入测试魔数验证：
+
+- 复位后从 `0x30000000` 启动；
+- 取指和 SimpleBus 状态机正常推进；
+- `lw/sw/lbu/sb` 在门级网表上仍然工作；
+- 标准单元行为模型在 Verilator 和 Icarus 中均可运行。
+
+运行：
+
+```bash
+make -C npc \
+  VERILATOR=/home/onelastikun/verilator/bin/verilator \
+  IVERILOG=/home/onelastikun/to_test/oss-cad-suite/bin/iverilog \
+  VVP=/home/onelastikun/to_test/oss-cad-suite/bin/vvp \
+  IVERILOG_VPI=/home/onelastikun/to_test/oss-cad-suite/bin/iverilog-vpi \
+  test-netlist
+```
+
+Verilator 门级编译必须定义：
+
+```text
+-D__VERILATOR__ -Dfunctional --no-timing --timescale 1ns/1ns
+```
+
+其中 `__VERILATOR__` 让 ICsprout55 标准单元使用适合 Verilator 的 DFF 行为模型，
+`functional` 用于关闭标准单元中的 specify 时序检查；这只是 E8 要求的功能仿真，
+不是带延时的 STA/后仿真。

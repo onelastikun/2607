@@ -19,6 +19,22 @@ ITRACE        ?= 0
 DIFF          ?=
 NEMU_REF      ?= $(abspath ../nemu/build/riscv32-nemu-interpreter-so)
 
+# E8 门级网表仿真输入：先在 ecc/npc 中运行 ECC，生成两种 Synthesis 网表。
+NETLIST_DIR           := $(BUILD_DIR)/netlist
+NETLIST_ECC_PROJECT   ?= $(abspath ../ecc/npc)
+NETLIST_SIM_GZ        ?= $(NETLIST_ECC_PROJECT)/runs/default/Synthesis_yosys/output/npc_Synthesis_sim.v.gz
+NETLIST_SIM_V         := $(NETLIST_DIR)/npc_Synthesis_sim.v
+NETLIST_PDK_ROOT      ?= /home/onelastikun/to_test/ecc/icsprout55-pdk
+NETLIST_CELL_ROOT     := $(NETLIST_PDK_ROOT)/IP/STD_cell/ics55_LLSC_H7C_V1p10C100
+NETLIST_CELL_SRCS     := $(NETLIST_CELL_ROOT)/ics55_LLSC_H7CR/verilog/ics55_LLSC_H7CR.v \
+                         $(NETLIST_CELL_ROOT)/ics55_LLSC_H7CL/verilog/ics55_LLSC_H7CL.v
+NETLIST_OBJ_DIR       := $(NETLIST_DIR)/verilator_obj
+NETLIST_BIN           := $(NETLIST_OBJ_DIR)/Vnetlist_top
+NETLIST_IVL_DIR       := $(NETLIST_DIR)/iverilog
+NETLIST_IVL_SIM       := $(NETLIST_IVL_DIR)/netlist.vvp
+NETLIST_ELF           := $(NETLIST_DIR)/e8-netlist-smoke.elf
+NETLIST_IMAGE         := $(NETLIST_DIR)/e8-netlist-smoke.bin
+
 # E8 Icarus/VPI 四值仿真构建目录。VPI 插件复用 csrc 中的内存和设备模型，
 # 但不放入 CSRCS，避免它被 Verilator 当作普通 C++ 仿真源编译。
 IVERILOG       ?= iverilog
@@ -80,6 +96,57 @@ $(IVERILOG_SIM): $(VSRCS) Makefile
 	@mkdir -p $(IVERILOG_DIR)
 	$(IVERILOG) -g2012 -D__ICARUS__ -s iverilog_top -o $@ $(VSRCS)
 
+
+$(NETLIST_SIM_V): $(NETLIST_SIM_GZ)
+	@test -f $< || { echo "missing ECC netlist: $< (run ECC first)"; exit 1; }
+	@mkdir -p $(NETLIST_DIR)
+	gzip -cd $< > $@
+
+$(NETLIST_ELF): tests/e8-netlist-smoke.S tests/linker.ld
+	@mkdir -p $(NETLIST_DIR)
+	$(RISCV_CC) -march=rv32e_zicsr -mabi=ilp32e -fno-pic -fno-pie \
+		-nostdlib -nostartfiles -static -mno-relax -Wl,--build-id=none \
+		-Wl,-T,$(abspath tests/linker.ld) -o $@ $<
+
+$(NETLIST_IMAGE): $(NETLIST_ELF)
+	$(RISCV_OBJCOPY) -O binary $< $@
+
+$(NETLIST_BIN): $(NETLIST_SIM_V) $(NETLIST_CELL_SRCS) \
+			 netlist/vsrc/netlist_top.sv netlist/vsrc/netlist_bus_pmem.sv \
+			 netlist/csrc/main.cpp csrc/memory.cpp csrc/device.cpp csrc/runtime.cpp Makefile
+	@test -f $(NETLIST_SIM_GZ) || { echo "missing ECC netlist: $(NETLIST_SIM_GZ) (run ECC first)"; exit 1; }
+	@mkdir -p $(NETLIST_OBJ_DIR)
+	$(VERILATOR) --cc --exe --build --no-timing --trace \
+		--top-module netlist_top --Mdir $(NETLIST_OBJ_DIR) \
+		-D__VERILATOR__ -Dfunctional --timescale 1ns/1ns -Wall -Wno-fatal \
+		-Wno-DECLFILENAME -Wno-PINMISSING -Wno-UNUSEDSIGNAL \
+		-Wno-TIMESCALEMOD -Wno-IMPLICIT -Wno-BLKSEQ \
+		-CFLAGS "-std=c++17 -O2 -Wall -Wextra -I$(abspath csrc/include)" \
+		-LDFLAGS "-ldl" $(NETLIST_SIM_V) \
+		netlist/vsrc/netlist_top.sv netlist/vsrc/netlist_bus_pmem.sv \
+		netlist/csrc/main.cpp csrc/memory.cpp csrc/device.cpp csrc/runtime.cpp \
+		$(NETLIST_CELL_SRCS)
+
+$(NETLIST_IVL_SIM): $(NETLIST_SIM_V) $(NETLIST_CELL_SRCS) \
+			 netlist/vsrc/iverilog_netlist_top.sv netlist/vsrc/netlist_top.sv \
+			 netlist/vsrc/netlist_bus_pmem.sv
+	@mkdir -p $(NETLIST_IVL_DIR)
+	$(IVERILOG) -g2012 -D__ICARUS__ -Dfunctional -s iverilog_netlist_top \
+		-o $@ netlist/vsrc/iverilog_netlist_top.sv \
+		netlist/vsrc/netlist_top.sv netlist/vsrc/netlist_bus_pmem.sv \
+		$(NETLIST_SIM_V) $(NETLIST_CELL_SRCS)
+
+# 使用 ECC 生成的 *_Synthesis_sim.v.gz 做 Verilator 门级功能仿真。
+test-netlist-verilator: $(NETLIST_BIN) $(NETLIST_IMAGE)
+	$(NETLIST_BIN) $(NETLIST_IMAGE)
+
+# 使用同一份门级网表做 Icarus 四值仿真，检查 X 信号传播。
+test-netlist-iverilog: $(NETLIST_IVL_SIM) $(NETLIST_IMAGE) $(IVERILOG_VPI_SO)
+	@$(VVP) -M$(abspath $(IVERILOG_DIR)) -mnpc_vpi \
+		$(abspath $(NETLIST_IVL_SIM)) +img=$(abspath $(NETLIST_IMAGE))
+
+test-netlist: test-netlist-verilator test-netlist-iverilog
+
 $(DIRECTED_ELF): tests/minirv-directed.S tests/linker.ld
 	@mkdir -p $(BUILD_DIR)
 	$(RISCV_CC) -march=rv32e_zicsr -mabi=ilp32e -fno-pic -fno-pie \
@@ -137,6 +204,6 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run test-minirv test-diff test-delayed test-itrace test-bus-error test-iverilog sim clean
+.PHONY: all run test-minirv test-diff test-delayed test-itrace test-bus-error test-iverilog test-netlist-verilator test-netlist-iverilog test-netlist sim clean
 
 include ../Makefile

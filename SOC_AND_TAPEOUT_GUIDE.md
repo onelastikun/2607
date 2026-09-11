@@ -1,14 +1,15 @@
 # MiniRV 项目框架与流片准备指南
 
-更新日期：2026-09-08
+更新日期：2026-09-11
 
 本文用于两件事：
 
 1. 帮助只熟悉 C 语言的读者快速理解当前 MiniRV/NPC/ysyxSoC 项目；
 2. 按“一生一芯”v26.07 当前讲义整理从功能检查、综合、网表仿真到后端物理设计的后续路线。
 
-本文只记录和解释流程。当前仓库尚未实际执行 E8 的 ECC 综合、四值仿真、网表仿真、
-ECOS Studio 后端设计和签核，不能把本文当成已经通过流片验收的证明。
+本文只记录和解释流程。当前仓库已经完成 E8 前端 lint、Icarus/VPI RTL 四值仿真、
+ECC 综合，以及短网表功能仿真；尚未执行 ECOS Studio 后端设计和签核，不能把本文当成
+已经通过完整流片验收的证明。
 
 更详细的 NPC C++ 入门说明见 [`npc/README.md`](npc/README.md)，实际进度见
 [`PROGRESS.md`](PROGRESS.md)。
@@ -73,7 +74,8 @@ MiniRV 工具展开成上述 8 条基础指令，并不代表 RTL 实现了完�
 - `minirvEMU`；
 - 真实 FPGA 板上验证；
 - 按用户要求跳过的耗时 SoC 性能评测；
-- E8 的 ECC 综合、iverilog 四值仿真、网表仿真、物理设计和签核。
+- ECOS Studio 后端物理设计和签核；
+- 长时间的 E8 网表/AM 性能回归。
 
 ---
 
@@ -363,10 +365,10 @@ make -C npc/soc test-sigint
 | 新版命名要求 | 顶层已为 `ysyx_25100265` | 当前新版方案不要求把所有文件合并或给内部模块统一加学号前缀 |
 | `SYNTHESIS` 隔离 | 正式顶层 DPI 已隔离 | 综合日志中确认没有 DPI、系统任务或黑盒残留 |
 | Verilator 静态检查 | CPU 综合视角曾做过基础 lint | 按 E8 使用最终 file list 和 `-Wall` 重新执行并逐项解释 warning |
-| 复位和四值仿真 | 尚未正式完成 | 使用 iverilog 检查 RTL 的 X 传播和热复位 |
-| ECC 综合 | 未执行 | 按 E6 配置 ECC/ICsprout55 PDK 并生成报告和两种网表 |
-| Verilator 网表仿真 | 未执行 | 使用 `_Synthesis_sim.v.gz` 和标准单元行为模型跑短程序 |
-| iverilog 网表仿真 | 未执行 | 检查综合网表的 X 传播 |
+| 复位和四值仿真 | 短 MiniRV RTL 测试已通过 | 需要时再用更长的 AM 程序观察 X 传播 |
+| ECC 综合 | 已完成 | 复核报告、网表和综合 warning；源文件变更后需重新运行 |
+| Verilator 网表仿真 | 短门级测试已通过 | 可按当期要求补充更长程序回归 |
+| iverilog 网表仿真 | 短门级四值测试已通过 | 可按当期要求补充更长程序回归 |
 | ECOS Studio 后端 | 未执行 | 从 Floorplan 开始完成布局布线并导出签核包 |
 
 因此，现在可以说“E7 功能闭环已建立”，但还不能说“已经具备流片签核结果”。
@@ -483,6 +485,22 @@ pdk.root         = ICsprout55 PDK 的绝对路径
 - `_Synthesis_sim.v.gz`：保留原顶层向量端口，用于网表仿真；
 - `_Synthesis.v.gz`：向量端口被拆成单 bit，供后端物理设计使用。
 
+本仓库当前一次实际综合结果（2026 年 9 月 10 日）为：
+
+```text
+顶层：ysyx_25100265
+综合检查：0 problems
+综合网表：ecc/npc/runs/default/Synthesis_yosys/output/npc_Synthesis.v.gz
+仿真网表：ecc/npc/runs/default/Synthesis_yosys/output/npc_Synthesis_sim.v.gz
+综合估算频率：158 MHz
+综合面积 CELLA：9185
+总动态功耗估计：0.2598 mW
+```
+
+这里的 158 MHz 是综合阶段估算值，不是完成布局布线后的最终芯片频率。ECC 的网表和
+报告位于本地 `ecc/npc/runs/`，默认不纳入 Git；如果修改正式 RTL，必须重新运行 ECC，
+不能继续使用旧网表。
+
 讲义提供 `AREA`、`DELAY` 和 `BALANCE` 三类 Yosys 综合策略。先让默认策略正确完成，
 再通过 `YOSYS_SYNTH_STRATEGY` 比较结果；每次比较都必须记录频率、面积、功耗和功能回归，
 不能只选择某个看起来最大的频率。
@@ -523,6 +541,20 @@ ICsprout55 标准单元行为级仿真模型
 
 网表中没有原来的 DPI 和容易读取的完整寄存器数组，DiffTest 调试能力会明显下降。因此
 一定先把 RTL 仿真、DiffTest 和四值 RTL 仿真做扎实，再进入网表仿真。
+
+当前仓库已经提供短门级回归：
+
+```bash
+make -C npc \
+  VERILATOR=/home/onelastikun/verilator/bin/verilator \
+  IVERILOG=/home/onelastikun/to_test/oss-cad-suite/bin/iverilog \
+  VVP=/home/onelastikun/to_test/oss-cad-suite/bin/vvp \
+  IVERILOG_VPI=/home/onelastikun/to_test/oss-cad-suite/bin/iverilog-vpi \
+  test-netlist
+```
+
+该目标使用 `ecc/npc/runs/default/` 中的 ECC 输出，执行 Verilator 二值门级仿真和
+Icarus 四值门级仿真。若 ECC 尚未运行，会明确报出缺少 `npc_Synthesis_sim.v.gz`。
 
 ### 10.5 按 E8 使用 ECOS Studio 做后端物理设计
 
@@ -587,20 +619,20 @@ E8 页面目前仍标有“待续未完”，所以真正报名时必须再看�
 
 ### E8 前端准备
 
-- [ ] 正式顶层开放所有 IFU/LSU 地址；
-- [ ] CPU 中没有下降沿触发；
-- [ ] Verilator `--lint-only -Wall` 已逐项处理；
-- [ ] RTL 四值仿真和热复位通过；
+- [x] 正式顶层开放所有 IFU/LSU 地址；
+- [x] CPU 中没有下降沿触发；
+- [x] Verilator `--lint-only -Wall` 已逐项处理；
+- [x] 短 MiniRV RTL 四值仿真和复位通过；
 - [ ] 仿真专用代码均被排除或由 `SYNTHESIS` 隔离。
 
 ### 综合和网表
 
-- [ ] ECC 使用当期指定版本和 PDK；
-- [ ] 综合 file list 只包含个人 NPC；
-- [ ] 日志没有未解析模块、黑盒和意外锁存器；
-- [ ] QoR、功耗、日志和两种网表已归档；
-- [ ] Verilator 网表仿真通过；
-- [ ] iverilog 网表四值仿真通过。
+- [x] ECC 使用讲义当前版本和 ICsprout55 PDK；
+- [x] 综合 file list 只包含个人 NPC；
+- [x] 日志没有未解析模块、黑盒和意外锁存器；
+- [x] QoR、功耗、日志和两种网表已生成；
+- [x] Verilator 短网表仿真通过；
+- [x] iverilog 短网表四值仿真通过。
 
 ### 后端和报名
 

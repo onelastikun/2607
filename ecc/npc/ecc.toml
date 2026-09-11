@@ -1,0 +1,35 @@
+[design]
+name = "npc"
+top = "ysyx_25100265"
+rtl = ["rtl/npc.f"]
+clock_port = "clock"
+frequency_mhz = 100.0
+
+[pdk]
+name = "ics55"
+root = "/home/onelastikun/to_test/ecc/icsprout55-pdk"
+
+[flow]
+# E6/E8 的前端综合和时序分析流程。
+preset = "syn_sta"
+run = "default"
+
+[pdk.overrides]
+libs = [
+  "/home/onelastikun/to_test/ecc/icsprout55-pdk/IP/STD_cell/ics55_LLSC_H7C_V1p10C100/ics55_LLSC_H7CR/liberty/ics55_LLSC_H7CR_typ_tt_1p2_25_nldm.lib",
+  "/home/onelastikun/to_test/ecc/icsprout55-pdk/IP/STD_cell/ics55_LLSC_H7C_V1p10C100/ics55_LLSC_H7CL/liberty/ics55_LLSC_H7CL_typ_tt_1p2_25_nldm.lib",
+]
+lefs = [
+  "/home/onelastikun/to_test/ecc/icsprout55-pdk/IP/STD_cell/ics55_LLSC_H7C_V1p10C100/ics55_LLSC_H7CR/lef/ics55_LLSC_H7CR_ecos.lef",
+  "/home/onelastikun/to_test/ecc/icsprout55-pdk/IP/STD_cell/ics55_LLSC_H7C_V1p10C100/ics55_LLSC_H7CL/lef/ics55_LLSC_H7CL_ecos.lef",
+]
+dont_use = [
+  "*AO222*",
+  "*2BB2*",
+  "*AOI222*",
+  "*AOI33*",
+  "*OA222*",
+  "*OAI222*",
+  "*OAI33*",
+  "*NOR4*",
+]
