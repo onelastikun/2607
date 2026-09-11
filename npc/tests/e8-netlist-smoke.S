@@ -27,10 +27,9 @@ fail:
   ebreak
 
 success:
+  # 将计算结果写入退出寄存器；外部模型会检查它，避免测试只验证“没有崩溃”。
   lui  x8, 0xa0000
-  lui  x9, 0x6
-  addi x9, x9, 0x00d
-  sw   x9, 0(x8)
+  sw   x6, 0(x8)
   ebreak
 
 .section .bss

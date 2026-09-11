@@ -1299,11 +1299,12 @@ ecc/npc/runs/default/Synthesis_yosys/output/npc_Synthesis.v.gz
   用于 ECOS Studio 后端物理设计
 ```
 
-当前仓库的门级短回归使用 `e8-netlist-smoke.S`，通过程序写入测试魔数验证：
+当前仓库的门级短回归使用 `e8-netlist-smoke.S`，通过程序把 `sw/lw/sb/lbu/add` 的计算结果
+写入退出寄存器，外部模型检查结果必须为 `0x123456d2`，因此不会把“只跑到退出点”误当成功：
 
 - 复位后从 `0x30000000` 启动；
 - 取指和 SimpleBus 状态机正常推进；
-- `lw/sw/lbu/sb` 在门级网表上仍然工作；
+- `lw/sw/lbu/sb`、算术和 `jalr` 在门级网表上仍然工作；
 - 标准单元行为模型在 Verilator 和 Icarus 中均可运行。
 
 运行：

@@ -158,12 +158,15 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 - 生成 `npc_Synthesis.v.gz` 和 `npc_Synthesis_sim.v.gz`；
 - QoR 报告估算频率 158 MHz、CELLA 9185、总动态功耗约 0.2598 mW；
 - 新增门级仿真外部存储器模型和 `e8-netlist-smoke.S`；
+- smoke 程序通过 `sw/lw/sb/lbu/add/jalr` 计算并检查 `0x123456d2`，不是只检查“未崩溃”；
+- 修正 Icarus VPI 读数据的非阻塞赋值覆盖问题；
 - Verilator 短门级功能仿真通过；
 - Icarus 短门级四值仿真通过；
 - `make -C npc test-netlist` 已通过。
 
 门级仿真模型针对 Verilator 的标准单元事件调度，保持响应有效信号到完整采样边沿，
-并允许完成响应的同时接收下一请求；这是仿真模型的握手实现，不改变个人 NPC 的综合 RTL。
+并允许完成响应的同时接收下一请求；Icarus 分支使用阻塞赋值保留 VPI 任务写入的读数据。
+这些修改只属于仿真模型，不改变个人 NPC 的综合 RTL。
 
 当前 E8 剩余：
 

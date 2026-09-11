@@ -35,7 +35,7 @@ module netlist_bus_pmem (
   localparam logic [31:0] PMEM_BASE = 32'h8000_0000;
   localparam logic [31:0] PMEM_END  = 32'h8800_0000;
   localparam logic [31:0] EXIT_ADDR = 32'ha000_0000;
-  localparam logic [31:0] PASS_CODE = 32'h0000_600d;
+  localparam logic [31:0] PASS_CODE = 32'h1234_56d2;
 
   logic ifu_pending;
   logic lsu_pending;
@@ -147,7 +147,11 @@ module netlist_bus_pmem (
           lsu_wait <= lsu_wait - 1'b1;
         end else if (lsu_reqValid) begin
           lsu_wait <= 2'd2;
+`ifdef __ICARUS__
+          lsu_data_reg = 32'd0;
+`else
           lsu_data_reg <= 32'd0;
+`endif
           if (lsu_wen && (lsu_addr == EXIT_ADDR)) begin
             if (lsu_wdata == PASS_CODE)
               test_passed <= 1'b1;
@@ -176,7 +180,11 @@ module netlist_bus_pmem (
       end else if (lsu_reqValid) begin
         lsu_pending <= 1'b1;
         lsu_wait <= 2'd2;
+`ifdef __ICARUS__
+        lsu_data_reg = 32'd0;
+`else
         lsu_data_reg <= 32'd0;
+`endif
         if (lsu_wen && (lsu_addr == EXIT_ADDR)) begin
           if (lsu_wdata == PASS_CODE)
             test_passed <= 1'b1;
