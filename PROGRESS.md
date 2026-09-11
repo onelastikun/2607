@@ -192,3 +192,19 @@ make -C npc/soc VERILATOR=/home/onelastikun/verilator/bin/verilator \
 
 这些是功能短回归，不包含按用户要求跳过的长时间性能评测。当前仓库仍未进行真实 FPGA
 板上验证，也未进行 ECOS Studio 后端物理设计。
+
+## NPC 核心回归复核（2026-09-11）
+
+使用当前工作树重新执行：
+
+```text
+make -C npc \
+  VERILATOR=/home/onelastikun/verilator/bin/verilator \
+  IVERILOG=/home/onelastikun/to_test/oss-cad-suite/bin/iverilog \
+  VVP=/home/onelastikun/to_test/oss-cad-suite/bin/vvp \
+  IVERILOG_VPI=/home/onelastikun/to_test/oss-cad-suite/bin/iverilog-vpi \
+  test-minirv test-delayed test-bus-error test-itrace test-iverilog
+```
+
+结果全部通过，覆盖 MiniRV 定向执行、延迟 SimpleBus、NEMU DiffTest、非法地址错误、
+指令轨迹检查和 Icarus/VPI RTL 四值仿真。
