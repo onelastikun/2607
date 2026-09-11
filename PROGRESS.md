@@ -208,3 +208,9 @@ make -C npc \
 
 结果全部通过，覆盖 MiniRV 定向执行、延迟 SimpleBus、NEMU DiffTest、非法地址错误、
 指令轨迹检查和 Icarus/VPI RTL 四值仿真。
+
+## E8 最终 RTL 冻结复核（2026-09-11）
+
+在固化个人 NPC 模块命名和 SoC 运行时配置后，重新执行 ECC `--overwrite`，再运行
+`make -C npc test-netlist`。综合输出和 Verilator/Icarus 网表仿真均再次通过，确保网表对应
+当前 Git 提交后的 RTL，而不是只对应未提交工作树。
