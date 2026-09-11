@@ -1,6 +1,6 @@
 // MiniRV 的组合译码与执行数据通路。
 // 正式指令范围只有 add/addi/lui/lw/lbu/sw/sb/jalr；另外保留 E7 要求的只读 CSR 和仿真 ebreak。
-module minirv_decode #(
+module ysyx_25100265_minirv_decode #(
   parameter logic [31:0] MVENDORID = 32'h7973_7978,
   parameter logic [31:0] MARCHID = 32'd0
 ) (

@@ -1,6 +1,6 @@
 // MiniRV 寄存器堆：沿用 RV32E 的 x0~x15，共 16 个 32 位架构寄存器。
 // 两个读端口为组合逻辑，单个写端口在时钟上升沿更新；x0 始终保持为 0。
-module minirv_regfile (
+module ysyx_25100265_minirv_regfile (
   input  logic         clock,
   input  logic         reset,
   input  logic [3:0]   rs1_idx,

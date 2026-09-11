@@ -53,7 +53,7 @@ module minirv_core #(
   assign regfile_write = rd_write && step;
 
   // 寄存器堆负责组合读取和提交时写回。
-  minirv_regfile u_regfile (
+  ysyx_25100265_minirv_regfile u_regfile (
     .clock(clock),
     .reset(reset),
     .rs1_idx(rs1_idx),
@@ -68,7 +68,7 @@ module minirv_core #(
   );
 
   // 译码器是纯组合模块，根据当前指令计算下一 PC、写回值和访存请求。
-  minirv_decode #(
+  ysyx_25100265_minirv_decode #(
     .MVENDORID(MVENDORID), .MARCHID(MARCHID)
   ) u_decode (
     .pc(pc_reg), .cycle_count(cycle_count),
