@@ -8,8 +8,8 @@
 2. 按“一生一芯”v26.07 当前讲义整理从功能检查、综合、网表仿真到后端物理设计的后续路线。
 
 本文只记录和解释流程。当前仓库已经完成 E8 前端 lint、Icarus/VPI RTL 四值仿真、
-ECC 综合，以及短网表功能仿真；尚未执行 ECOS Studio 后端设计和签核，不能把本文当成
-已经通过完整流片验收的证明。
+ECC 综合、短网表功能仿真，以及 ECOS Studio 后端全流程；尚未导出最终 Signoff Package，
+也不能把本文当成项目方已经接受流片申请的证明。
 
 更详细的 NPC C++ 入门说明见 [`npc/README.md`](npc/README.md)，实际进度见
 [`PROGRESS.md`](PROGRESS.md)。
@@ -369,7 +369,7 @@ make -C npc/soc test-sigint
 | ECC 综合 | 已完成 | 复核报告、网表和综合 warning；源文件变更后需重新运行 |
 | Verilator 网表仿真 | 短门级测试已通过 | 可按当期要求补充更长程序回归 |
 | iverilog 网表仿真 | 短门级四值测试已通过 | 可按当期要求补充更长程序回归 |
-| ECOS Studio 后端 | 未执行 | 从 Floorplan 开始完成布局布线并导出签核包 |
+| ECOS Studio 后端 | 已完成全流程 | 核对报告并在 ECOS Studio 中导出 Signoff Package |
 
 因此，现在可以说“E7 功能闭环已建立”，但还不能说“已经具备流片签核结果”。
 
@@ -589,10 +589,10 @@ Icarus 四值门级仿真。若 ECC 尚未运行，会明确报出缺少 `npc_Sy
 - Checklist/Sign-off details：STA、DRC、LVS 等是否达标；
 - Risk Details：除无宏单元导致的 `config.macro_locations` 提示外，不应忽略其他风险。
 
-当前环境检查：截至 2026 年 9 月 11 日，本机未发现 ECOS Studio 可执行文件或 AppImage。
-`~/.local/ecos-sdk` 是嵌入式软件 SDK，提供的是 `ecos` 固件命令行工具，不是 E8 所需的
-后端 Studio，不能替代 ECOS Studio。因此本仓库只能完成 ECC、综合网表仿真和文档准备，
-不能伪造后端结果；安装官方工具后，应从下面的 Floorplan 步骤继续。
+当前后端复核结果：2026 年 9 月 11 日已在 ECOS Studio 中成功跑通完整后端 flow。
+首次运行的 `Cell area must be greater than 0` 是由于导入旧网表导致顶层不匹配，
+具体输入、工作空间和结果见 [`E8_BACKEND_REPORT.md`](E8_BACKEND_REPORT.md)。
+当前仍需在 ECOS Studio 中手动导出 Signoff Package。
 
 如果无法导出签核包：
 
@@ -650,10 +650,10 @@ E8 页面目前仍标有“待续未完”，所以真正报名时必须再看�
 
 ### 后端和报名
 
-- [ ] ECOS Studio 从 Floorplan 开始；
-- [ ] 导入的是不含 `_sim` 的后端网表；
-- [ ] Top/Clock 名称正确；
-- [ ] STA、DRC、LVS 和风险检查满足当期要求；
+- [x] ECOS Studio 从 Floorplan 开始；
+- [x] 导入的是不含 `_sim` 的后端网表；
+- [x] Top/Clock 名称正确；
+- [x] STA、DRC、LVS 和风险检查满足当前工作空间检查；
 - [ ] Signoff Package 成功导出并可追溯；
 - [ ] 已重新阅读 E9 和当期通知；
 - [ ] 答辩与流片申请材料已提交。

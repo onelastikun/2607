@@ -171,8 +171,9 @@ SoC 继续使用同一个 SimpleBus 主设备，ysyxSoC 内部总线转换由官
 当前 E8 剩余：
 
 - 可按当期要求补充更长的网表/AM 回归；
-- 本机未发现 ECOS Studio 可执行文件，因此暂时无法启动后端 flow；
-- Floorplan、布局布线、STA/DRC/LVS 和 Signoff Package 尚未执行。
+- 2026-09-11 已使用 ECOS Studio 成功完成 Floorplan、布局布线、STA、DRC、LVS、RCX 和 Harden；
+- 结果和首次 `cell_area=0` 的输入错误记录在 `E8_BACKEND_REPORT.md`；
+- ECOS Studio 工作空间中尚未发现导出的 Signoff Package，仍需手动导出并归档。
 
 ## E7/SoC 短回归复核（2026-09-11）
 
